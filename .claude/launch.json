@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:frontend"],
+      "port": 5173,
+      "env": {
+        "DATABASE_URL": "postgresql://byhadmade:byhadmade_secret@localhost:5433/byhadmade",
+        "JWT_SECRET": "byhadmade-jwt-secret-change-me",
+        "PORT": "3001"
+      }
+    }
+  ]
+}
