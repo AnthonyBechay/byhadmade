@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, CalendarDays, Users, Building2, Trash2, Edit3 } from 'lucide-react';
+import { Plus, CalendarDays, Users, Building2, Trash2, Edit3, Copy, X, Check } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './Scheduling.css';
 
-interface Restaurant { id: string; name: string; _count: { employees: number } }
-interface Employee { id: string; name: string; role: string | null; phone: string | null; email: string | null; restaurant: { name: string } }
-interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; restaurant: { id: string; name: string }; shifts: any[] }
+interface Restaurant { id: string; name: string; address: string | null; _count: { employees: number } }
+interface Employee { id: string; name: string; role: string | null; phone: string | null; email: string | null; color: string | null; hourlyRate: number | null; isActive: boolean; restaurant: { name: string } }
+interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; notes: string | null; restaurant: { id: string; name: string }; shifts: any[] }
+
+const COLORS = ['#c8956c', '#6a9fd4', '#4a9e6a', '#d4a035', '#9b6cc8', '#d46a6a', '#6ac8b0', '#c86a9b'];
 
 export default function Scheduling() {
   const navigate = useNavigate();
@@ -17,12 +19,12 @@ export default function Scheduling() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState('');
 
-  // Modals
   const [showRestModal, setShowRestModal] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showSchedModal, setShowSchedModal] = useState(false);
-  const [restForm, setRestForm] = useState({ name: '' });
-  const [empForm, setEmpForm] = useState({ name: '', role: '', phone: '', email: '', restaurantId: '' });
+  const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
+  const [restForm, setRestForm] = useState({ name: '', address: '' });
+  const [empForm, setEmpForm] = useState({ name: '', role: '', phone: '', email: '', color: COLORS[0], hourlyRate: '', restaurantId: '' });
   const [schedForm, setSchedForm] = useState({ weekStart: '', restaurantId: '' });
 
   const load = () => {
@@ -39,16 +41,39 @@ export default function Scheduling() {
     e.preventDefault();
     await api.post('/restaurants', restForm);
     setShowRestModal(false);
-    setRestForm({ name: '' });
+    setRestForm({ name: '', address: '' });
     load();
   };
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post('/employees', empForm);
+    const data = {
+      ...empForm,
+      hourlyRate: empForm.hourlyRate ? parseFloat(empForm.hourlyRate) : null,
+    };
+    if (editingEmp) {
+      await api.put(`/employees/${editingEmp.id}`, data);
+    } else {
+      await api.post('/employees', data);
+    }
     setShowEmpModal(false);
-    setEmpForm({ name: '', role: '', phone: '', email: '', restaurantId: '' });
+    setEditingEmp(null);
+    setEmpForm({ name: '', role: '', phone: '', email: '', color: COLORS[0], hourlyRate: '', restaurantId: '' });
     load();
+  };
+
+  const openEditEmp = (emp: Employee) => {
+    setEditingEmp(emp);
+    setEmpForm({
+      name: emp.name,
+      role: emp.role || '',
+      phone: emp.phone || '',
+      email: emp.email || '',
+      color: emp.color || COLORS[0],
+      hourlyRate: emp.hourlyRate?.toString() || '',
+      restaurantId: '',
+    });
+    setShowEmpModal(true);
   };
 
   const handleCreateSchedule = async (e: React.FormEvent) => {
@@ -66,7 +91,20 @@ export default function Scheduling() {
     navigate(`/app/scheduling/${schedule.id}`);
   };
 
+  const handleDuplicate = async (sched: Schedule) => {
+    const weekStart = prompt('Enter new week start date (YYYY-MM-DD):');
+    if (!weekStart) return;
+    const newSched = await api.post(`/schedules/${sched.id}/duplicate`, { weekStart });
+    navigate(`/app/scheduling/${newSched.id}`);
+  };
+
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const formatDateFull = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const getUniqueEmployees = (shifts: any[]) => {
+    const ids = new Set(shifts.map(s => s.employee?.id));
+    return ids.size;
+  };
 
   return (
     <div>
@@ -77,7 +115,7 @@ export default function Scheduling() {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           {tab === 'restaurants' && <button className="btn btn-primary" onClick={() => setShowRestModal(true)}><Plus size={18} /> Add Restaurant</button>}
-          {tab === 'employees' && <button className="btn btn-primary" onClick={() => { setEmpForm({ ...empForm, restaurantId: selectedRestaurant || (restaurants[0]?.id || '') }); setShowEmpModal(true); }}><Plus size={18} /> Add Employee</button>}
+          {tab === 'employees' && <button className="btn btn-primary" onClick={() => { setEditingEmp(null); setEmpForm({ name: '', role: '', phone: '', email: '', color: COLORS[Math.floor(Math.random() * COLORS.length)], hourlyRate: '', restaurantId: selectedRestaurant || (restaurants[0]?.id || '') }); setShowEmpModal(true); }}><Plus size={18} /> Add Employee</button>}
           {tab === 'schedules' && <button className="btn btn-primary" onClick={() => { setSchedForm({ ...schedForm, restaurantId: selectedRestaurant || (restaurants[0]?.id || '') }); setShowSchedModal(true); }}><Plus size={18} /> New Schedule</button>}
         </div>
       </div>
@@ -87,10 +125,10 @@ export default function Scheduling() {
           <CalendarDays size={16} /> Schedules
         </button>
         <button className={`sched-tab ${tab === 'employees' ? 'active' : ''}`} onClick={() => setTab('employees')}>
-          <Users size={16} /> Employees
+          <Users size={16} /> Employees ({employees.length})
         </button>
         <button className={`sched-tab ${tab === 'restaurants' ? 'active' : ''}`} onClick={() => setTab('restaurants')}>
-          <Building2 size={16} /> Restaurants
+          <Building2 size={16} /> Restaurants ({restaurants.length})
         </button>
         <div style={{ flex: 1 }} />
         <select className="select" style={{ width: 200 }} value={selectedRestaurant} onChange={e => setSelectedRestaurant(e.target.value)}>
@@ -109,19 +147,22 @@ export default function Scheduling() {
             <button className="btn btn-primary" onClick={() => setShowSchedModal(true)}><Plus size={18} /> Create Schedule</button>
           </div>
         ) : (
-          <div className="recipe-grid">
+          <div className="schedule-list">
             {schedules.map(sched => (
-              <div key={sched.id} className="recipe-card" onClick={() => navigate(`/app/scheduling/${sched.id}`)}>
-                <div className="recipe-card-header">
-                  <h3>{formatDate(sched.weekStart)} - {formatDate(sched.weekEnd)}</h3>
-                  <div className="recipe-card-actions" onClick={e => e.stopPropagation()}>
-                    <button className="btn-icon" onClick={async () => { if (confirm('Delete schedule?')) { await api.delete(`/schedules/${sched.id}`); load(); } }}><Trash2 size={16} /></button>
-                  </div>
+              <div key={sched.id} className="schedule-list-item" onClick={() => navigate(`/app/scheduling/${sched.id}`)}>
+                <div className="schedule-list-dates">
+                  <span className="schedule-list-range">{formatDate(sched.weekStart)} - {formatDate(sched.weekEnd)}</span>
+                  <span className="schedule-list-year">{new Date(sched.weekStart).getFullYear()}</span>
                 </div>
-                <div className="recipe-card-meta">
+                <div className="schedule-list-info">
                   <span className="badge">{sched.restaurant.name}</span>
                   <span className={`badge ${sched.published ? 'badge-success' : 'badge-warning'}`}>{sched.published ? 'Published' : 'Draft'}</span>
-                  <span className="badge">{sched.shifts.length} shifts</span>
+                  <span className="schedule-list-meta">{getUniqueEmployees(sched.shifts)} employees</span>
+                  <span className="schedule-list-meta">{sched.shifts.filter((s: any) => s.shiftType === 'WORK').length} work shifts</span>
+                </div>
+                <div className="schedule-list-actions" onClick={e => e.stopPropagation()}>
+                  <button className="btn-icon" title="Duplicate" onClick={() => handleDuplicate(sched)}><Copy size={16} /></button>
+                  <button className="btn-icon" title="Delete" onClick={async () => { if (confirm('Delete schedule and all its shifts?')) { await api.delete(`/schedules/${sched.id}`); load(); } }}><Trash2 size={16} /></button>
                 </div>
               </div>
             ))}
@@ -139,20 +180,27 @@ export default function Scheduling() {
             <button className="btn btn-primary" onClick={() => setShowEmpModal(true)}><Plus size={18} /> Add Employee</button>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          <div className="employee-grid">
             {employees.map(emp => (
-              <div key={emp.id} className="card" style={{ padding: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <strong style={{ fontSize: 15 }}>{emp.name}</strong>
-                    {emp.role && <span className="badge" style={{ marginLeft: 8, fontSize: 11 }}>{emp.role}</span>}
+              <div key={emp.id} className={`employee-card ${!emp.isActive ? 'employee-inactive' : ''}`}>
+                <div className="employee-card-header">
+                  <div className="employee-avatar" style={{ background: emp.color || '#c8956c' }}>
+                    {emp.name.charAt(0).toUpperCase()}
                   </div>
-                  <button className="btn-icon" onClick={async () => { if (confirm('Delete employee?')) { await api.delete(`/employees/${emp.id}`); load(); } }}><Trash2 size={14} /></button>
+                  <div className="employee-card-info">
+                    <strong>{emp.name}</strong>
+                    {emp.role && <span className="employee-role">{emp.role}</span>}
+                  </div>
+                  <div className="employee-card-actions">
+                    <button className="btn-icon" onClick={() => openEditEmp(emp)}><Edit3 size={14} /></button>
+                    <button className="btn-icon" onClick={async () => { if (confirm('Delete employee?')) { await api.delete(`/employees/${emp.id}`); load(); } }}><Trash2 size={14} /></button>
+                  </div>
                 </div>
-                <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                  <div>{emp.restaurant.name}</div>
-                  {emp.phone && <div>{emp.phone}</div>}
-                  {emp.email && <div>{emp.email}</div>}
+                <div className="employee-card-details">
+                  <span>{emp.restaurant.name}</span>
+                  {emp.phone && <span>{emp.phone}</span>}
+                  {emp.hourlyRate && <span>${emp.hourlyRate}/hr</span>}
+                  {!emp.isActive && <span className="badge" style={{ fontSize: 11 }}>Inactive</span>}
                 </div>
               </div>
             ))}
@@ -172,12 +220,13 @@ export default function Scheduling() {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
             {restaurants.map(rest => (
-              <div key={rest.id} className="card" style={{ padding: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={rest.id} className="card" style={{ padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <strong style={{ fontSize: 16 }}>{rest.name}</strong>
                   <button className="btn-icon" onClick={async () => { if (confirm('Delete restaurant and all its employees?')) { await api.delete(`/restaurants/${rest.id}`); load(); } }}><Trash2 size={14} /></button>
                 </div>
-                <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-secondary)' }}>{rest._count.employees} employees</div>
+                {rest.address && <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 8 }}>{rest.address}</div>}
+                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{rest._count.employees} employees</div>
               </div>
             ))}
           </div>
@@ -189,7 +238,11 @@ export default function Scheduling() {
         <form onSubmit={handleCreateRestaurant}>
           <div className="form-group">
             <label className="label">Restaurant Name *</label>
-            <input className="input" value={restForm.name} onChange={e => setRestForm({ name: e.target.value })} required />
+            <input className="input" value={restForm.name} onChange={e => setRestForm({ ...restForm, name: e.target.value })} required />
+          </div>
+          <div className="form-group">
+            <label className="label">Address</label>
+            <input className="input" value={restForm.address} onChange={e => setRestForm({ ...restForm, address: e.target.value })} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
             <button type="button" className="btn btn-secondary" onClick={() => setShowRestModal(false)}>Cancel</button>
@@ -199,15 +252,17 @@ export default function Scheduling() {
       </Modal>
 
       {/* Employee Modal */}
-      <Modal isOpen={showEmpModal} onClose={() => setShowEmpModal(false)} title="Add Employee">
+      <Modal isOpen={showEmpModal} onClose={() => { setShowEmpModal(false); setEditingEmp(null); }} title={editingEmp ? 'Edit Employee' : 'Add Employee'}>
         <form onSubmit={handleCreateEmployee}>
-          <div className="form-group">
-            <label className="label">Restaurant *</label>
-            <select className="select" value={empForm.restaurantId} onChange={e => setEmpForm({ ...empForm, restaurantId: e.target.value })} required>
-              <option value="">Select...</option>
-              {restaurants.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-          </div>
+          {!editingEmp && (
+            <div className="form-group">
+              <label className="label">Restaurant *</label>
+              <select className="select" value={empForm.restaurantId} onChange={e => setEmpForm({ ...empForm, restaurantId: e.target.value })} required>
+                <option value="">Select...</option>
+                {restaurants.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="form-group">
             <label className="label">Name *</label>
             <input className="input" value={empForm.name} onChange={e => setEmpForm({ ...empForm, name: e.target.value })} required />
@@ -218,17 +273,37 @@ export default function Scheduling() {
               <input className="input" value={empForm.role} onChange={e => setEmpForm({ ...empForm, role: e.target.value })} placeholder="Chef, Waiter, etc." />
             </div>
             <div className="form-group">
+              <label className="label">Hourly Rate ($)</label>
+              <input className="input" type="number" step="0.01" value={empForm.hourlyRate} onChange={e => setEmpForm({ ...empForm, hourlyRate: e.target.value })} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
               <label className="label">Phone</label>
               <input className="input" value={empForm.phone} onChange={e => setEmpForm({ ...empForm, phone: e.target.value })} />
             </div>
+            <div className="form-group">
+              <label className="label">Email</label>
+              <input className="input" type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} />
+            </div>
           </div>
           <div className="form-group">
-            <label className="label">Email</label>
-            <input className="input" type="email" value={empForm.email} onChange={e => setEmpForm({ ...empForm, email: e.target.value })} />
+            <label className="label">Color</label>
+            <div className="color-picker">
+              {COLORS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  className={`color-swatch ${empForm.color === c ? 'active' : ''}`}
+                  style={{ background: c }}
+                  onClick={() => setEmpForm({ ...empForm, color: c })}
+                />
+              ))}
+            </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setShowEmpModal(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Add Employee</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowEmpModal(false); setEditingEmp(null); }}>Cancel</button>
+            <button type="submit" className="btn btn-primary">{editingEmp ? 'Update' : 'Add'} Employee</button>
           </div>
         </form>
       </Modal>

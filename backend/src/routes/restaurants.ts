@@ -21,8 +21,8 @@ router.get('/', async (_req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name } = req.body;
-    const restaurant = await prisma.restaurant.create({ data: { name } });
+    const { name, address } = req.body;
+    const restaurant = await prisma.restaurant.create({ data: { name, address } });
     res.status(201).json(restaurant);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create restaurant' });
@@ -31,10 +31,10 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, address } = req.body;
     const restaurant = await prisma.restaurant.update({
       where: { id: req.params.id },
-      data: { name },
+      data: { name, address },
     });
     res.json(restaurant);
   } catch (error) {

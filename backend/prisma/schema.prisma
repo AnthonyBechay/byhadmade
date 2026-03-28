@@ -119,6 +119,7 @@ model MenuItem {
 model Restaurant {
   id        String     @id @default(cuid())
   name      String
+  address   String?
   employees Employee[]
   schedules Schedule[]
   createdAt DateTime   @default(now())
@@ -131,6 +132,9 @@ model Employee {
   role         String?
   phone        String?
   email        String?
+  color        String?
+  isActive     Boolean    @default(true)
+  hourlyRate   Float?
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   shifts       Shift[]
@@ -142,6 +146,7 @@ model Schedule {
   id           String     @id @default(cuid())
   weekStart    DateTime
   weekEnd      DateTime
+  notes        String?
   published    Boolean    @default(false)
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
@@ -153,16 +158,24 @@ model Schedule {
 }
 
 model Shift {
-  id         String   @id @default(cuid())
+  id         String     @id @default(cuid())
   dayOfWeek  Int
   startTime  String
   endTime    String
-  isBreak    Boolean  @default(false)
+  shiftType  ShiftType  @default(WORK)
   notes      String?
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   scheduleId String
-  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  schedule   Schedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+enum ShiftType {
+  WORK
+  BREAK
+  DAY_OFF
+  SICK
+  VACATION
 }
