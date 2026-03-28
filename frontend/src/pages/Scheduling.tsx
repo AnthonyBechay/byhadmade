@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, CalendarDays, Users, Building2, Trash2, Edit3, Copy, X, Check, Upload, DollarSign } from 'lucide-react';
+import { Plus, CalendarDays, Users, Building2, Trash2, Edit3, Copy, X, Check, Upload, DollarSign, ClipboardCopy } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './Scheduling.css';
@@ -28,7 +28,7 @@ export default function Scheduling() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [empForm, setEmpForm] = useState({ name: '', role: '', phone: '', email: '', color: COLORS[0], hourlyRate: '', restaurantId: '' });
-  const [schedForm, setSchedForm] = useState({ weekStart: '', restaurantId: '' });
+  const [schedForm, setSchedForm] = useState({ weekStart: '', restaurantId: '', copyFromId: '' });
   const [schedError, setSchedError] = useState('');
 
   const load = () => {
@@ -108,12 +108,21 @@ export default function Scheduling() {
   const handleCreateSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const schedule = await api.post('/schedules', {
-        weekStart: new Date(schedForm.weekStart).toISOString(),
-        restaurantId: schedForm.restaurantId,
-      });
+      let schedule;
+      if (schedForm.copyFromId) {
+        // Duplicate from existing schedule
+        schedule = await api.post(`/schedules/${schedForm.copyFromId}/duplicate`, {
+          weekStart: new Date(schedForm.weekStart).toISOString(),
+        });
+      } else {
+        // Create blank schedule
+        schedule = await api.post('/schedules', {
+          weekStart: new Date(schedForm.weekStart).toISOString(),
+          restaurantId: schedForm.restaurantId,
+        });
+      }
       setShowSchedModal(false);
-      setSchedForm({ weekStart: '', restaurantId: '' });
+      setSchedForm({ weekStart: '', restaurantId: '', copyFromId: '' });
       setSchedError('');
       navigate(`/app/scheduling/${schedule.id}`);
     } catch (err: any) {
@@ -145,11 +154,10 @@ export default function Scheduling() {
     return `${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
-  const handleDuplicate = async (sched: Schedule) => {
-    const weekStart = prompt('Enter new week start date (YYYY-MM-DD):');
-    if (!weekStart) return;
-    const newSched = await api.post(`/schedules/${sched.id}/duplicate`, { weekStart });
-    navigate(`/app/scheduling/${newSched.id}`);
+  const handleDuplicate = (sched: Schedule) => {
+    setSchedForm({ weekStart: '', restaurantId: sched.restaurant.id, copyFromId: sched.id });
+    setSchedError('');
+    setShowSchedModal(true);
   };
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -409,11 +417,11 @@ export default function Scheduling() {
       </Modal>
 
       {/* Schedule Modal */}
-      <Modal isOpen={showSchedModal} onClose={() => { setShowSchedModal(false); setSchedError(''); }} title="New Schedule">
+      <Modal isOpen={showSchedModal} onClose={() => { setShowSchedModal(false); setSchedError(''); setSchedForm({ weekStart: '', restaurantId: '', copyFromId: '' }); }} title="New Schedule">
         <form onSubmit={handleCreateSchedule}>
           <div className="form-group">
             <label className="label">Restaurant *</label>
-            <select className="select" value={schedForm.restaurantId} onChange={e => setSchedForm({ ...schedForm, restaurantId: e.target.value })} required>
+            <select className="select" value={schedForm.restaurantId} onChange={e => setSchedForm({ ...schedForm, restaurantId: e.target.value, copyFromId: '' })} required>
               <option value="">Select...</option>
               {restaurants.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
@@ -427,14 +435,42 @@ export default function Scheduling() {
               </div>
             )}
           </div>
+          {/* Copy from previous schedule */}
+          {schedForm.restaurantId && schedules.filter(s => s.restaurant.id === schedForm.restaurantId).length > 0 && (
+            <div className="form-group">
+              <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ClipboardCopy size={14} /> Copy shifts from previous schedule
+              </label>
+              <select
+                className="select"
+                value={schedForm.copyFromId}
+                onChange={e => setSchedForm({ ...schedForm, copyFromId: e.target.value })}
+              >
+                <option value="">Start blank (no shifts)</option>
+                {schedules
+                  .filter(s => s.restaurant.id === schedForm.restaurantId)
+                  .sort((a, b) => new Date(b.weekStart).getTime() - new Date(a.weekStart).getTime())
+                  .map(s => (
+                    <option key={s.id} value={s.id}>
+                      {formatDate(s.weekStart)} - {formatDate(s.weekEnd)} ({s.shifts.filter((sh: any) => sh.shiftType === 'WORK').length} work shifts, {s.published ? 'Published' : 'Draft'})
+                    </option>
+                  ))}
+              </select>
+              {schedForm.copyFromId && (
+                <div style={{ fontSize: 12, color: 'var(--color-primary)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Copy size={12} /> All shifts will be copied to the new week. You can then edit them.
+                </div>
+              )}
+            </div>
+          )}
           {schedError && (
             <div style={{ fontSize: 13, color: '#e05555', marginBottom: 12, padding: '8px 12px', background: 'rgba(224, 85, 85, 0.08)', borderRadius: 6 }}>
               {schedError}
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button type="button" className="btn btn-secondary" onClick={() => { setShowSchedModal(false); setSchedError(''); }}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Create Schedule</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowSchedModal(false); setSchedError(''); setSchedForm({ weekStart: '', restaurantId: '', copyFromId: '' }); }}>Cancel</button>
+            <button type="submit" className="btn btn-primary">{schedForm.copyFromId ? 'Copy & Create' : 'Create Schedule'}</button>
           </div>
         </form>
       </Modal>
