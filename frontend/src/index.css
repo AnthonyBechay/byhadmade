@@ -278,3 +278,33 @@ input, select, textarea {
   max-width: 300px;
   margin: 0 auto 20px;
 }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .btn {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+  .btn-sm {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 16px;
+  }
+  .empty-state {
+    padding: 40px 16px;
+  }
+}

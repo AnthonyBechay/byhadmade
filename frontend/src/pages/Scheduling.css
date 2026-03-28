@@ -188,3 +188,62 @@
   border-color: #fff;
   box-shadow: 0 0 0 2px var(--color-primary);
 }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .scheduling-tabs {
+    gap: 2px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .scheduling-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .scheduling-tabs .select {
+    width: 140px;
+    min-width: 140px;
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+  .sched-tab {
+    padding: 6px 10px;
+    font-size: 13px;
+    white-space: nowrap;
+    gap: 5px;
+  }
+  .schedule-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+  .schedule-list-dates {
+    min-width: unset;
+  }
+  .schedule-list-range {
+    font-size: 14px;
+  }
+  .schedule-list-info {
+    gap: 6px;
+  }
+  .schedule-list-actions {
+    opacity: 1;
+    align-self: flex-end;
+  }
+  .employee-grid {
+    grid-template-columns: 1fr;
+  }
+  .employee-card-actions {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .sched-tab span {
+    display: none;
+  }
+  .sched-tab {
+    padding: 8px;
+  }
+}

@@ -436,18 +436,79 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+  .landing-nav-inner {
+    height: 60px;
+  }
+  .logo-mark-img {
+    width: 32px;
+    height: 32px;
+  }
+  .logo-text {
+    font-size: 17px;
+  }
+  .hero {
+    padding: 90px 16px 60px;
+    min-height: auto;
+  }
+  .hero-badge {
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+  .hero-subtitle {
+    font-size: 15px;
+    margin-bottom: 28px;
+  }
+  .hero-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .btn-lg {
+    padding: 12px 22px;
+    font-size: 14px;
+    width: 100%;
+    justify-content: center;
+  }
+  .btn-glass {
+    padding: 12px 22px;
+    font-size: 14px;
+    width: 100%;
+    justify-content: center;
+  }
+  .features {
+    padding: 60px 16px;
+  }
+  .features-header {
+    margin-bottom: 32px;
+  }
   .features-grid {
     grid-template-columns: 1fr;
   }
+  .feature-card {
+    padding: 28px 20px;
+  }
   .hero-float {
     display: none;
+  }
+  .quote-section {
+    padding: 48px 16px;
+  }
+  .quote-mark {
+    font-size: 80px;
+    top: -24px;
+  }
+  .cta-section {
+    padding: 48px 16px 80px;
+  }
+  .cta-inner {
+    padding: 40px 20px;
+    border-radius: 16px;
   }
   .footer-inner {
     flex-direction: column;
     gap: 16px;
     text-align: center;
   }
-  .cta-inner {
-    padding: 48px 24px;
+  .landing-footer {
+    padding: 24px 16px;
   }
 }

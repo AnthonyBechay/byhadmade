@@ -90,11 +90,44 @@ export default function Salaries() {
     ];
 
     const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    downloadCSV(csv, `salaries_${restaurant?.name || 'report'}_${MONTHS[month - 1]}_${year}.csv`);
+  };
+
+  const exportEmployeeCSV = (empId: string, emp: SalaryEmployee) => {
+    if (!report) return;
+    const weeks = Object.keys(emp.weeklyBreakdown).sort();
+    const rows = [
+      ['Employee', emp.name],
+      ['Role', emp.role || ''],
+      ['Hourly Rate', emp.hourlyRate?.toString() || 'N/A'],
+      ['Month', `${MONTHS[month - 1]} ${year}`],
+      ['Restaurant', restaurant?.name || ''],
+      [],
+      ['Week', 'Work Hours', 'Break Hours', 'Shifts', 'Pay'],
+      ...weeks.map(week => {
+        const w = emp.weeklyBreakdown[week];
+        const weekDate = new Date(week);
+        return [
+          `Week of ${weekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+          w.workHours.toFixed(1),
+          w.breakHours.toFixed(1),
+          w.shifts.toString(),
+          emp.hourlyRate ? (w.workHours * emp.hourlyRate).toFixed(2) : 'N/A',
+        ];
+      }),
+      [],
+      ['TOTAL', emp.totalWorkHours.toFixed(1), emp.totalBreakHours.toFixed(1), emp.totalShifts.toString(), emp.salary != null ? emp.salary.toFixed(2) : 'N/A'],
+    ];
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    downloadCSV(csv, `salary_${emp.name.replace(/\s+/g, '_')}_${MONTHS[month - 1]}_${year}.csv`);
+  };
+
+  const downloadCSV = (csv: string, filename: string) => {
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `salaries_${restaurant?.name || 'report'}_${MONTHS[month - 1]}_${year}.csv`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -163,6 +196,7 @@ export default function Salaries() {
               <span>Shifts</span>
               <span>Break Hrs</span>
               <span>Salary</span>
+              <span></span>
             </div>
             {Object.entries(report.employees).map(([empId, emp]) => (
               <div key={empId} className="salary-table-row">
@@ -178,6 +212,7 @@ export default function Salaries() {
                 <span>{emp.totalShifts}</span>
                 <span>{emp.totalBreakHours.toFixed(1)}h</span>
                 <span className="sal-salary">{emp.salary != null ? `$${emp.salary.toFixed(2)}` : '-'}</span>
+                <span><button className="btn-icon" title="Export employee report" onClick={() => exportEmployeeCSV(empId, emp)}><Download size={14} /></button></span>
               </div>
             ))}
             <div className="salary-table-row salary-table-footer">
@@ -187,6 +222,7 @@ export default function Salaries() {
               <span>{Object.values(report.employees).reduce((s, e) => s + e.totalShifts, 0)}</span>
               <span>{Object.values(report.employees).reduce((s, e) => s + e.totalBreakHours, 0).toFixed(1)}h</span>
               <span className="sal-salary">${report.totalSalary.toFixed(2)}</span>
+              <span></span>
             </div>
           </div>
 
@@ -225,7 +261,7 @@ export default function Salaries() {
       {/* Configure Rates Modal */}
       <Modal isOpen={showConfig} onClose={() => { setShowConfig(false); setEditingRate(null); }} title="Configure Hourly Rates">
         <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 16 }}>
-          Set the hourly rate for each employee. Salary is calculated as hours worked x hourly rate.
+          Set the hourly rate for each employee. This is the same rate shown in the Employees tab. Salary = hours worked x hourly rate.
         </p>
         <div className="rate-config-list">
           {employees.map(emp => (

@@ -188,3 +188,51 @@
   border-color: var(--color-primary);
   background: rgba(200, 149, 108, 0.05);
 }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .salary-controls {
+    flex-wrap: wrap;
+  }
+  .salary-controls .select {
+    width: 130px;
+    font-size: 13px;
+  }
+  .salary-summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .salary-card-value {
+    font-size: 20px;
+  }
+  .salary-table {
+    overflow-x: auto;
+  }
+  .salary-table-header,
+  .salary-table-row {
+    min-width: 600px;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  .salary-weekly-grid {
+    gap: 6px;
+  }
+  .salary-weekly-card {
+    min-width: 100px;
+    padding: 8px 10px;
+  }
+  .rate-config-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .salary-summary-cards {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .salary-card {
+    padding: 12px;
+  }
+}

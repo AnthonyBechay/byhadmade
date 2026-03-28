@@ -392,10 +392,119 @@
   background: rgba(224, 85, 85, 0.2);
 }
 
+/* Shift error */
+.shift-error {
+  font-size: 13px;
+  color: #e05555;
+  padding: 8px 12px;
+  background: rgba(224, 85, 85, 0.08);
+  border: 1px solid rgba(224, 85, 85, 0.15);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
 /* Clickable shift blocks */
 .shift-block {
   cursor: pointer;
 }
 .shift-block:hover {
   filter: brightness(1.1);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .schedule-grid {
+    min-width: 700px;
+  }
+  .schedule-header,
+  .schedule-row {
+    grid-template-columns: 120px repeat(7, 1fr);
+  }
+  .schedule-name-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    padding: 8px;
+  }
+  .schedule-name-cell strong {
+    font-size: 12px;
+  }
+  .schedule-role {
+    font-size: 10px;
+  }
+  .schedule-day-header {
+    padding: 6px 4px;
+  }
+  .day-name {
+    font-size: 10px;
+  }
+  .day-date {
+    font-size: 9px;
+  }
+  .schedule-day-cell {
+    min-height: 50px;
+    padding: 4px;
+  }
+  .shift-block {
+    padding: 3px 5px;
+    font-size: 10px;
+  }
+  .shift-time {
+    font-size: 10px;
+    gap: 2px;
+  }
+  .shift-notes {
+    font-size: 9px;
+  }
+  .shift-delete {
+    opacity: 1;
+  }
+  .quick-add-popover {
+    width: 340px;
+    padding: 16px;
+  }
+  .quick-add-popover h3 {
+    font-size: 14px;
+  }
+  .shift-type-picker {
+    gap: 3px;
+  }
+  .shift-type-btn {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .summary-header,
+  .summary-row {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .summary-header span,
+  .summary-row span {
+    font-size: 11px;
+  }
+  .daily-header,
+  .daily-row {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .schedule-grid {
+    min-width: 600px;
+  }
+  .schedule-header,
+  .schedule-row {
+    grid-template-columns: 90px repeat(7, 1fr);
+  }
+  .emp-indicator {
+    display: none;
+  }
+  .schedule-name-cell {
+    padding: 6px;
+    font-size: 12px;
+  }
+  .quick-add-popover {
+    width: calc(100vw - 32px);
+  }
 }

@@ -486,10 +486,33 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Helper: check if two time ranges overlap
+function timesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const s1 = toMin(start1), e1 = toMin(end1), s2 = toMin(start2), e2 = toMin(end2);
+  return s1 < e2 && s2 < e1;
+}
+
 // Shift management
 router.post('/:id/shifts', async (req, res) => {
   try {
     const { employeeId, dayOfWeek, startTime, endTime, shiftType, notes } = req.body;
+
+    // Check for overlapping shifts (only for types with times)
+    if (shiftType === 'WORK' || shiftType === 'BREAK') {
+      const existing = await prisma.shift.findMany({
+        where: { scheduleId: req.params.id, employeeId, dayOfWeek },
+      });
+      const overlap = existing.find(s =>
+        (s.shiftType === 'WORK' || s.shiftType === 'BREAK') &&
+        timesOverlap(startTime, endTime, s.startTime, s.endTime)
+      );
+      if (overlap) {
+        res.status(409).json({ error: `Overlaps with existing shift (${overlap.startTime} - ${overlap.endTime})` });
+        return;
+      }
+    }
+
     const shift = await prisma.shift.create({
       data: {
         employeeId, dayOfWeek, startTime, endTime,
@@ -509,6 +532,24 @@ router.post('/:id/shifts', async (req, res) => {
 router.post('/:id/shifts/bulk', async (req, res) => {
   try {
     const { shifts } = req.body;
+
+    // Validate no overlaps with existing shifts
+    for (const s of shifts) {
+      if (s.shiftType === 'WORK' || s.shiftType === 'BREAK') {
+        const existing = await prisma.shift.findMany({
+          where: { scheduleId: req.params.id, employeeId: s.employeeId, dayOfWeek: s.dayOfWeek },
+        });
+        const overlap = existing.find(ex =>
+          (ex.shiftType === 'WORK' || ex.shiftType === 'BREAK') &&
+          timesOverlap(s.startTime, s.endTime, ex.startTime, ex.endTime)
+        );
+        if (overlap) {
+          res.status(409).json({ error: `Shift ${s.startTime}-${s.endTime} overlaps with existing (${overlap.startTime}-${overlap.endTime})` });
+          return;
+        }
+      }
+    }
+
     const created = await Promise.all(
       shifts.map((s: any) =>
         prisma.shift.create({
@@ -534,6 +575,30 @@ router.post('/:id/shifts/bulk', async (req, res) => {
 router.put('/shifts/:shiftId', async (req, res) => {
   try {
     const { dayOfWeek, startTime, endTime, shiftType, notes } = req.body;
+
+    // Check overlap (exclude current shift)
+    if ((shiftType === 'WORK' || shiftType === 'BREAK') && startTime && endTime) {
+      const current = await prisma.shift.findUnique({ where: { id: req.params.shiftId } });
+      if (current) {
+        const existing = await prisma.shift.findMany({
+          where: {
+            scheduleId: current.scheduleId,
+            employeeId: current.employeeId,
+            dayOfWeek: dayOfWeek ?? current.dayOfWeek,
+            id: { not: req.params.shiftId },
+          },
+        });
+        const overlap = existing.find(s =>
+          (s.shiftType === 'WORK' || s.shiftType === 'BREAK') &&
+          timesOverlap(startTime, endTime, s.startTime, s.endTime)
+        );
+        if (overlap) {
+          res.status(409).json({ error: `Overlaps with existing shift (${overlap.startTime} - ${overlap.endTime})` });
+          return;
+        }
+      }
+    }
+
     const shift = await prisma.shift.update({
       where: { id: req.params.shiftId },
       data: { dayOfWeek, startTime, endTime, shiftType, notes },

@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { ChefHat, Flame, UtensilsCrossed, Star, ArrowRight, Instagram } from 'lucide-react';
+import { ChefHat, Flame, UtensilsCrossed, Star, ArrowRight, Instagram, LayoutDashboard } from 'lucide-react';
 import './Landing.css';
 
 export default function Landing() {
   const navigate = useNavigate();
+  const isLoggedIn = !!localStorage.getItem('token');
 
   return (
     <div className="landing">
@@ -18,9 +19,15 @@ export default function Landing() {
             <a href="https://www.instagram.com/byhadmade/" target="_blank" rel="noopener noreferrer" className="nav-social">
               <Instagram size={18} />
             </a>
-            <button className="btn btn-primary btn-sm" onClick={() => navigate('/login')}>
-              Sign In
-            </button>
+            {isLoggedIn ? (
+              <button className="btn btn-primary btn-sm" onClick={() => navigate('/app')}>
+                <LayoutDashboard size={16} /> Dashboard
+              </button>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={() => navigate('/login')}>
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       </nav>
@@ -45,8 +52,8 @@ export default function Landing() {
             born from a deep love for authentic cooking.
           </p>
           <div className="hero-actions">
-            <button className="btn btn-primary btn-lg" onClick={() => navigate('/login')}>
-              Enter Kitchen
+            <button className="btn btn-primary btn-lg" onClick={() => navigate(isLoggedIn ? '/app' : '/login')}>
+              {isLoggedIn ? 'Go to Dashboard' : 'Enter Kitchen'}
               <ArrowRight size={18} />
             </button>
             <a

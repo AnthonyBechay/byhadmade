@@ -39,6 +39,10 @@ export default function Layout() {
               <span>{item.label}</span>
             </NavLink>
           ))}
+          <button className="sidebar-link sidebar-logout-mobile" onClick={handleLogout}>
+            <LogOut size={20} />
+            <span>Out</span>
+          </button>
         </nav>
         <div className="sidebar-footer">
           <button className="sidebar-link" onClick={handleLogout}>

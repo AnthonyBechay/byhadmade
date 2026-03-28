@@ -199,3 +199,73 @@
   font-size: 13px;
   color: var(--color-text-muted);
 }
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .public-schedule {
+    padding: 16px 10px;
+  }
+  .public-schedule-header {
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .public-schedule-header h1 {
+    font-size: 20px;
+  }
+  .public-logo {
+    width: 40px;
+    height: 40px;
+  }
+  .public-grid {
+    min-width: 700px;
+  }
+  .public-grid-header,
+  .public-grid-row {
+    grid-template-columns: 110px repeat(7, 1fr);
+  }
+  .public-name-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    padding: 8px;
+  }
+  .public-name-cell strong {
+    font-size: 12px;
+  }
+  .pub-role {
+    font-size: 10px;
+  }
+  .public-day-header {
+    padding: 6px 4px;
+  }
+  .pub-day-name {
+    font-size: 10px;
+  }
+  .pub-day-date {
+    font-size: 9px;
+  }
+  .public-day-cell {
+    min-height: 50px;
+    padding: 4px;
+  }
+  .pub-shift {
+    padding: 3px 5px;
+    font-size: 10px;
+  }
+  .pub-shift-time {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .public-grid {
+    min-width: 580px;
+  }
+  .public-grid-header,
+  .public-grid-row {
+    grid-template-columns: 80px repeat(7, 1fr);
+  }
+  .pub-emp-indicator {
+    display: none;
+  }
+}

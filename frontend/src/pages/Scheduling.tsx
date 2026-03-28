@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './Scheduling.css';
 
-interface Restaurant { id: string; name: string; address: string | null; _count: { employees: number } }
+interface Restaurant { id: string; name: string; address: string | null; phone: string | null; logoUrl: string | null; details: string | null; shareToken: string; _count: { employees: number } }
 interface Employee { id: string; name: string; role: string | null; phone: string | null; email: string | null; color: string | null; hourlyRate: number | null; isActive: boolean; restaurant: { name: string } }
 interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; notes: string | null; restaurant: { id: string; name: string }; shifts: any[] }
 
@@ -23,7 +23,8 @@ export default function Scheduling() {
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showSchedModal, setShowSchedModal] = useState(false);
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
-  const [restForm, setRestForm] = useState({ name: '', address: '' });
+  const [editingRest, setEditingRest] = useState<Restaurant | null>(null);
+  const [restForm, setRestForm] = useState({ name: '', address: '', phone: '', logoUrl: '', details: '' });
   const [empForm, setEmpForm] = useState({ name: '', role: '', phone: '', email: '', color: COLORS[0], hourlyRate: '', restaurantId: '' });
   const [schedForm, setSchedForm] = useState({ weekStart: '', restaurantId: '' });
   const [schedError, setSchedError] = useState('');
@@ -40,10 +41,27 @@ export default function Scheduling() {
 
   const handleCreateRestaurant = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post('/restaurants', restForm);
+    if (editingRest) {
+      await api.put(`/restaurants/${editingRest.id}`, restForm);
+    } else {
+      await api.post('/restaurants', restForm);
+    }
     setShowRestModal(false);
-    setRestForm({ name: '', address: '' });
+    setEditingRest(null);
+    setRestForm({ name: '', address: '', phone: '', logoUrl: '', details: '' });
     load();
+  };
+
+  const openEditRest = (rest: Restaurant) => {
+    setEditingRest(rest);
+    setRestForm({
+      name: rest.name,
+      address: rest.address || '',
+      phone: rest.phone || '',
+      logoUrl: rest.logoUrl || '',
+      details: rest.details || '',
+    });
+    setShowRestModal(true);
   };
 
   const handleCreateEmployee = async (e: React.FormEvent) => {
@@ -244,15 +262,27 @@ export default function Scheduling() {
             <button className="btn btn-primary" onClick={() => setShowRestModal(true)}><Plus size={18} /> Add Restaurant</button>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
             {restaurants.map(rest => (
               <div key={rest.id} className="card" style={{ padding: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <strong style={{ fontSize: 16 }}>{rest.name}</strong>
-                  <button className="btn-icon" onClick={async () => { if (confirm('Delete restaurant and all its employees?')) { await api.delete(`/restaurants/${rest.id}`); load(); } }}><Trash2 size={14} /></button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {rest.logoUrl ? (
+                      <img src={rest.logoUrl} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16 }}>{rest.name.charAt(0)}</div>
+                    )}
+                    <strong style={{ fontSize: 16 }}>{rest.name}</strong>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn-icon" onClick={() => openEditRest(rest)}><Edit3 size={14} /></button>
+                    <button className="btn-icon" onClick={async () => { if (confirm('Delete restaurant and all its employees?')) { await api.delete(`/restaurants/${rest.id}`); load(); } }}><Trash2 size={14} /></button>
+                  </div>
                 </div>
-                {rest.address && <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 8 }}>{rest.address}</div>}
-                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{rest._count.employees} employees</div>
+                {rest.address && <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>{rest.address}</div>}
+                {rest.phone && <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>{rest.phone}</div>}
+                {rest.details && <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 4, fontStyle: 'italic' }}>{rest.details}</div>}
+                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>{rest._count.employees} employees</div>
               </div>
             ))}
           </div>
@@ -260,7 +290,7 @@ export default function Scheduling() {
       )}
 
       {/* Restaurant Modal */}
-      <Modal isOpen={showRestModal} onClose={() => setShowRestModal(false)} title="Add Restaurant">
+      <Modal isOpen={showRestModal} onClose={() => { setShowRestModal(false); setEditingRest(null); }} title={editingRest ? 'Edit Restaurant' : 'Add Restaurant'}>
         <form onSubmit={handleCreateRestaurant}>
           <div className="form-group">
             <label className="label">Restaurant Name *</label>
@@ -268,11 +298,23 @@ export default function Scheduling() {
           </div>
           <div className="form-group">
             <label className="label">Address</label>
-            <input className="input" value={restForm.address} onChange={e => setRestForm({ ...restForm, address: e.target.value })} />
+            <input className="input" value={restForm.address} onChange={e => setRestForm({ ...restForm, address: e.target.value })} placeholder="123 Main St" />
+          </div>
+          <div className="form-group">
+            <label className="label">Phone</label>
+            <input className="input" value={restForm.phone} onChange={e => setRestForm({ ...restForm, phone: e.target.value })} placeholder="+1 555 123 4567" />
+          </div>
+          <div className="form-group">
+            <label className="label">Logo URL</label>
+            <input className="input" value={restForm.logoUrl} onChange={e => setRestForm({ ...restForm, logoUrl: e.target.value })} placeholder="https://example.com/logo.png" />
+          </div>
+          <div className="form-group">
+            <label className="label">Details / Notes</label>
+            <textarea className="input" rows={3} value={restForm.details} onChange={e => setRestForm({ ...restForm, details: e.target.value })} placeholder="Additional info (shown in salary reports, etc.)" style={{ resize: 'vertical' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setShowRestModal(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Add</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowRestModal(false); setEditingRest(null); }}>Cancel</button>
+            <button type="submit" className="btn btn-primary">{editingRest ? 'Update' : 'Add'}</button>
           </div>
         </form>
       </Modal>

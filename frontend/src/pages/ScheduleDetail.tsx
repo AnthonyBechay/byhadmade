@@ -41,11 +41,16 @@ export default function ScheduleDetail() {
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
+  const [shiftError, setShiftError] = useState('');
   const [shiftForm, setShiftForm] = useState({
     employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '',
-    // Split shift fields
     splitStart1: '09:00', splitEnd1: '14:00', splitStart2: '15:00', splitEnd2: '22:00',
   });
+
+  const DEFAULT_FORM = {
+    employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '',
+    splitStart1: '09:00', splitEnd1: '14:00', splitStart2: '15:00', splitEnd2: '22:00',
+  };
 
   const load = () => {
     api.get(`/schedules/${id}`).then((s: Schedule) => {
@@ -59,69 +64,83 @@ export default function ScheduleDetail() {
 
   const handleAddShift = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (shiftForm.shiftType === 'SPLIT') {
-      // Create two WORK shifts and one BREAK
-      await api.post(`/schedules/${id}/shifts/bulk`, {
-        shifts: [
-          { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
-          { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
-          { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
-        ],
-      });
-    } else {
-      await api.post(`/schedules/${id}/shifts`, {
-        employeeId: shiftForm.employeeId,
-        dayOfWeek: parseInt(shiftForm.dayOfWeek),
-        startTime: shiftForm.startTime,
-        endTime: shiftForm.endTime,
-        shiftType: shiftForm.shiftType,
-        notes: shiftForm.notes || null,
-      });
+    setShiftError('');
+    try {
+      if (shiftForm.shiftType === 'SPLIT') {
+        await api.post(`/schedules/${id}/shifts/bulk`, {
+          shifts: [
+            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
+            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
+            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
+          ],
+        });
+      } else {
+        await api.post(`/schedules/${id}/shifts`, {
+          employeeId: shiftForm.employeeId,
+          dayOfWeek: parseInt(shiftForm.dayOfWeek),
+          startTime: shiftForm.startTime,
+          endTime: shiftForm.endTime,
+          shiftType: shiftForm.shiftType,
+          notes: shiftForm.notes || null,
+        });
+      }
+      setShowAddShift(false);
+      resetForm();
+      load();
+    } catch (err: any) {
+      setShiftError(err.message || 'Failed to add shift');
     }
-    setShowAddShift(false);
-    resetForm();
-    load();
   };
 
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    setShiftError('');
     if (quickAddDay === null || !quickAddEmp) return;
-    if (shiftForm.shiftType === 'SPLIT') {
-      await api.post(`/schedules/${id}/shifts/bulk`, {
-        shifts: [
-          { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
-          { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
-          { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
-        ],
-      });
-    } else {
-      await api.post(`/schedules/${id}/shifts`, {
-        employeeId: quickAddEmp,
-        dayOfWeek: quickAddDay,
-        startTime: shiftForm.startTime,
-        endTime: shiftForm.endTime,
-        shiftType: shiftForm.shiftType,
-        notes: shiftForm.notes || null,
-      });
+    try {
+      if (shiftForm.shiftType === 'SPLIT') {
+        await api.post(`/schedules/${id}/shifts/bulk`, {
+          shifts: [
+            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
+            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
+            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
+          ],
+        });
+      } else {
+        await api.post(`/schedules/${id}/shifts`, {
+          employeeId: quickAddEmp,
+          dayOfWeek: quickAddDay,
+          startTime: shiftForm.startTime,
+          endTime: shiftForm.endTime,
+          shiftType: shiftForm.shiftType,
+          notes: shiftForm.notes || null,
+        });
+      }
+      setQuickAddDay(null);
+      setQuickAddEmp(null);
+      resetForm();
+      load();
+    } catch (err: any) {
+      setShiftError(err.message || 'Failed to add shift');
     }
-    setQuickAddDay(null);
-    setQuickAddEmp(null);
-    resetForm();
-    load();
   };
 
   const handleEditShift = async (e: React.FormEvent) => {
     e.preventDefault();
+    setShiftError('');
     if (!editingShift) return;
-    await api.put(`/schedules/shifts/${editingShift.id}`, {
-      startTime: shiftForm.startTime,
-      endTime: shiftForm.endTime,
-      shiftType: shiftForm.shiftType === 'SPLIT' ? 'WORK' : shiftForm.shiftType,
-      notes: shiftForm.notes || null,
-    });
-    setEditingShift(null);
-    resetForm();
-    load();
+    try {
+      await api.put(`/schedules/shifts/${editingShift.id}`, {
+        startTime: shiftForm.startTime,
+        endTime: shiftForm.endTime,
+        shiftType: shiftForm.shiftType === 'SPLIT' ? 'WORK' : shiftForm.shiftType,
+        notes: shiftForm.notes || null,
+      });
+      setEditingShift(null);
+      resetForm();
+      load();
+    } catch (err: any) {
+      setShiftError(err.message || 'Failed to update shift');
+    }
   };
 
   const handleDeleteShift = async (shiftId: string) => {
@@ -135,13 +154,15 @@ export default function ScheduleDetail() {
   };
 
   const resetForm = () => {
-    setShiftForm({ employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '', splitStart1: '09:00', splitEnd1: '14:00', splitStart2: '15:00', splitEnd2: '22:00' });
+    setShiftForm({ ...DEFAULT_FORM });
+    setShiftError('');
   };
 
   const openEditShift = (shift: Shift) => {
     setEditingShift(shift);
+    setShiftError('');
     setShiftForm({
-      ...shiftForm,
+      ...DEFAULT_FORM,
       startTime: shift.startTime,
       endTime: shift.endTime,
       shiftType: shift.shiftType,
@@ -350,6 +371,7 @@ export default function ScheduleDetail() {
           <div className="quick-add-popover" onClick={e => e.stopPropagation()}>
             <h3>Edit Shift - {editingShift.employee.name}</h3>
             <form onSubmit={handleEditShift}>
+              {shiftError && <div className="shift-error">{shiftError}</div>}
               {renderShiftTypePicker(false)}
               {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && renderTimeFields()}
               <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -375,6 +397,7 @@ export default function ScheduleDetail() {
           <div className="quick-add-popover" onClick={e => e.stopPropagation()}>
             <h3>Add Shift - {employees.find(e => e.id === quickAddEmp)?.name} ({DAYS[quickAddDay]})</h3>
             <form onSubmit={handleQuickAdd}>
+              {shiftError && <div className="shift-error">{shiftError}</div>}
               {renderShiftTypePicker(true)}
               {shiftForm.shiftType === 'SPLIT' && renderSplitFields()}
               {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && renderTimeFields()}
@@ -391,8 +414,9 @@ export default function ScheduleDetail() {
       )}
 
       {/* Add Shift Modal (for adding to any employee/day) */}
-      <Modal isOpen={showAddShift} onClose={() => setShowAddShift(false)} title="Add Shift">
+      <Modal isOpen={showAddShift} onClose={() => { setShowAddShift(false); resetForm(); }} title="Add Shift">
         <form onSubmit={handleAddShift}>
+          {shiftError && <div className="shift-error">{shiftError}</div>}
           <div className="form-group">
             <label className="label">Employee *</label>
             <select className="select" value={shiftForm.employeeId} onChange={e => setShiftForm({ ...shiftForm, employeeId: e.target.value })} required>
