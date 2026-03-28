@@ -30,6 +30,7 @@ export default function Scheduling() {
   const [empForm, setEmpForm] = useState({ name: '', role: '', phone: '', email: '', color: COLORS[0], hourlyRate: '', restaurantId: '' });
   const [schedForm, setSchedForm] = useState({ weekStart: '', restaurantId: '', copyFromId: '' });
   const [schedError, setSchedError] = useState('');
+  const [copyFromSchedules, setCopyFromSchedules] = useState<Schedule[]>([]);
 
   const load = () => {
     api.get('/restaurants').then(setRestaurants).catch(() => {});
@@ -105,6 +106,11 @@ export default function Scheduling() {
     setShowEmpModal(true);
   };
 
+  const loadCopyFromSchedules = (restaurantId: string) => {
+    if (!restaurantId) { setCopyFromSchedules([]); return; }
+    api.get(`/schedules?restaurantId=${restaurantId}`).then(setCopyFromSchedules).catch(() => setCopyFromSchedules([]));
+  };
+
   const handleCreateSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -157,6 +163,7 @@ export default function Scheduling() {
   const handleDuplicate = (sched: Schedule) => {
     setSchedForm({ weekStart: '', restaurantId: sched.restaurant.id, copyFromId: sched.id });
     setSchedError('');
+    loadCopyFromSchedules(sched.restaurant.id);
     setShowSchedModal(true);
   };
 
@@ -178,7 +185,7 @@ export default function Scheduling() {
         <div style={{ display: 'flex', gap: 10 }}>
           {tab === 'restaurants' && <button className="btn btn-primary" onClick={() => setShowRestModal(true)}><Plus size={18} /> Add Restaurant</button>}
           {tab === 'employees' && <button className="btn btn-primary" onClick={() => { setEditingEmp(null); setEmpForm({ name: '', role: '', phone: '', email: '', color: COLORS[Math.floor(Math.random() * COLORS.length)], hourlyRate: '', restaurantId: selectedRestaurant || (restaurants[0]?.id || '') }); setShowEmpModal(true); }}><Plus size={18} /> Add Employee</button>}
-          {tab === 'schedules' && <button className="btn btn-primary" onClick={() => { setSchedForm({ ...schedForm, restaurantId: selectedRestaurant || (restaurants[0]?.id || '') }); setShowSchedModal(true); }}><Plus size={18} /> New Schedule</button>}
+          {tab === 'schedules' && <button className="btn btn-primary" onClick={() => { const restId = selectedRestaurant || (restaurants[0]?.id || ''); setSchedForm({ weekStart: '', restaurantId: restId, copyFromId: '' }); loadCopyFromSchedules(restId); setShowSchedModal(true); }}><Plus size={18} /> New Schedule</button>}
         </div>
       </div>
 
@@ -206,7 +213,7 @@ export default function Scheduling() {
             <CalendarDays size={48} />
             <h3>No schedules yet</h3>
             <p>Create a weekly schedule for your team</p>
-            <button className="btn btn-primary" onClick={() => setShowSchedModal(true)}><Plus size={18} /> Create Schedule</button>
+            <button className="btn btn-primary" onClick={() => { const restId = selectedRestaurant || (restaurants[0]?.id || ''); setSchedForm({ weekStart: '', restaurantId: restId, copyFromId: '' }); loadCopyFromSchedules(restId); setShowSchedModal(true); }}><Plus size={18} /> Create Schedule</button>
           </div>
         ) : (
           <div className="schedule-list">
@@ -417,11 +424,11 @@ export default function Scheduling() {
       </Modal>
 
       {/* Schedule Modal */}
-      <Modal isOpen={showSchedModal} onClose={() => { setShowSchedModal(false); setSchedError(''); setSchedForm({ weekStart: '', restaurantId: '', copyFromId: '' }); }} title="New Schedule">
+      <Modal isOpen={showSchedModal} onClose={() => { setShowSchedModal(false); setSchedError(''); setSchedForm({ weekStart: '', restaurantId: '', copyFromId: '' }); setCopyFromSchedules([]); }} title="New Schedule">
         <form onSubmit={handleCreateSchedule}>
           <div className="form-group">
             <label className="label">Restaurant *</label>
-            <select className="select" value={schedForm.restaurantId} onChange={e => setSchedForm({ ...schedForm, restaurantId: e.target.value, copyFromId: '' })} required>
+            <select className="select" value={schedForm.restaurantId} onChange={e => { setSchedForm({ ...schedForm, restaurantId: e.target.value, copyFromId: '' }); loadCopyFromSchedules(e.target.value); }} required>
               <option value="">Select...</option>
               {restaurants.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
@@ -436,7 +443,7 @@ export default function Scheduling() {
             )}
           </div>
           {/* Copy from previous schedule */}
-          {schedForm.restaurantId && schedules.filter(s => s.restaurant.id === schedForm.restaurantId).length > 0 && (
+          {schedForm.restaurantId && copyFromSchedules.length > 0 && (
             <div className="form-group">
               <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <ClipboardCopy size={14} /> Copy shifts from previous schedule
@@ -447,9 +454,9 @@ export default function Scheduling() {
                 onChange={e => setSchedForm({ ...schedForm, copyFromId: e.target.value })}
               >
                 <option value="">Start blank (no shifts)</option>
-                {schedules
-                  .filter(s => s.restaurant.id === schedForm.restaurantId)
+                {copyFromSchedules
                   .sort((a, b) => new Date(b.weekStart).getTime() - new Date(a.weekStart).getTime())
+                  .slice(0, 5)
                   .map(s => (
                     <option key={s.id} value={s.id}>
                       {formatDate(s.weekStart)} - {formatDate(s.weekEnd)} ({s.shifts.filter((sh: any) => sh.shiftType === 'WORK').length} work shifts, {s.published ? 'Published' : 'Draft'})
@@ -469,7 +476,7 @@ export default function Scheduling() {
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button type="button" className="btn btn-secondary" onClick={() => { setShowSchedModal(false); setSchedError(''); setSchedForm({ weekStart: '', restaurantId: '', copyFromId: '' }); }}>Cancel</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowSchedModal(false); setSchedError(''); setSchedForm({ weekStart: '', restaurantId: '', copyFromId: '' }); setCopyFromSchedules([]); }}>Cancel</button>
             <button type="submit" className="btn btn-primary">{schedForm.copyFromId ? 'Copy & Create' : 'Create Schedule'}</button>
           </div>
         </form>
