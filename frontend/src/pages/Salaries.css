@@ -1,0 +1,190 @@
+.salary-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.salary-controls .select {
+  width: 160px;
+}
+
+/* Summary cards */
+.salary-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.salary-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+
+.salary-card-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.salary-card-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.salary-total {
+  color: var(--color-success);
+}
+
+/* Salary table */
+.salary-table {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.salary-table-header {
+  display: flex;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.salary-table-header span {
+  flex: 1;
+  text-align: center;
+}
+.salary-table-header span:first-child {
+  text-align: left;
+}
+
+.salary-table-row {
+  display: flex;
+  padding: 12px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--color-border);
+  align-items: center;
+}
+.salary-table-row:last-child {
+  border-bottom: none;
+}
+.salary-table-row span {
+  flex: 1;
+  text-align: center;
+}
+.salary-table-row span:first-child {
+  text-align: left;
+}
+
+.salary-table-footer {
+  background: var(--color-surface);
+}
+
+.sal-emp-indicator {
+  width: 4px;
+  height: 28px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.sal-hours {
+  font-weight: 600;
+  color: var(--color-primary-light);
+}
+
+.sal-salary {
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+/* Weekly breakdown */
+.salary-weekly {
+  margin-bottom: 20px;
+}
+.salary-weekly h4 {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.salary-weekly-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.salary-weekly-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  min-width: 120px;
+}
+
+.salary-weekly-date {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.salary-weekly-hours {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary-light);
+}
+
+.salary-weekly-pay {
+  font-size: 12px;
+  color: var(--color-success);
+  margin-top: 2px;
+}
+
+/* Rate configuration */
+.rate-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rate-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.rate-config-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rate-config-value {
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-family: var(--font-body);
+  color: var(--color-primary-light);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.rate-config-value:hover {
+  border-color: var(--color-primary);
+  background: rgba(200, 149, 108, 0.05);
+}

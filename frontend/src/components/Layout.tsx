@@ -23,7 +23,7 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-logo">
-            <span className="logo-mark">H</span>
+            <img src="/logo.png" alt="ByHadMade" className="logo-img" />
             <span className="logo-text">ByHadMade</span>
           </div>
         </div>

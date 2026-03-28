@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, BarChart3, Copy, Sun, Umbrella, Thermometer } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, BarChart3, Sun, Umbrella, Thermometer, Edit3, Share2, Copy, Scissors, DollarSign } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './ScheduleDetail.css';
@@ -11,6 +11,7 @@ const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SHIFT_TYPES = [
   { value: 'WORK', label: 'Work', icon: Clock },
   { value: 'BREAK', label: 'Break', icon: Coffee },
+  { value: 'SPLIT', label: 'Split', icon: Scissors },
   { value: 'DAY_OFF', label: 'Day Off', icon: Sun },
   { value: 'SICK', label: 'Sick', icon: Thermometer },
   { value: 'VACATION', label: 'Vacation', icon: Umbrella },
@@ -18,7 +19,8 @@ const SHIFT_TYPES = [
 
 interface Employee { id: string; name: string; role: string | null; color: string | null; hourlyRate: number | null }
 interface Shift { id: string; dayOfWeek: number; startTime: string; endTime: string; shiftType: string; notes: string | null; employee: Employee }
-interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; notes: string | null; restaurant: { id: string; name: string }; shifts: Shift[] }
+interface Restaurant { id: string; name: string; shareToken?: string }
+interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; notes: string | null; restaurant: Restaurant; shifts: Shift[] }
 interface SummaryEntry {
   name: string; role: string | null; color: string | null; hourlyRate: number | null;
   totalWorkHours: number; totalBreakHours: number; workShifts: number; daysWorked: number;
@@ -36,8 +38,13 @@ export default function ScheduleDetail() {
   const [showSummary, setShowSummary] = useState(false);
   const [quickAddDay, setQuickAddDay] = useState<number | null>(null);
   const [quickAddEmp, setQuickAddEmp] = useState<string | null>(null);
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [showSharePopup, setShowSharePopup] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
   const [shiftForm, setShiftForm] = useState({
     employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '',
+    // Split shift fields
+    splitStart1: '09:00', splitEnd1: '14:00', splitStart2: '15:00', splitEnd2: '22:00',
   });
 
   const load = () => {
@@ -52,29 +59,68 @@ export default function ScheduleDetail() {
 
   const handleAddShift = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post(`/schedules/${id}/shifts`, {
-      ...shiftForm,
-      dayOfWeek: parseInt(shiftForm.dayOfWeek),
-    });
+    if (shiftForm.shiftType === 'SPLIT') {
+      // Create two WORK shifts and one BREAK
+      await api.post(`/schedules/${id}/shifts/bulk`, {
+        shifts: [
+          { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
+          { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
+          { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
+        ],
+      });
+    } else {
+      await api.post(`/schedules/${id}/shifts`, {
+        employeeId: shiftForm.employeeId,
+        dayOfWeek: parseInt(shiftForm.dayOfWeek),
+        startTime: shiftForm.startTime,
+        endTime: shiftForm.endTime,
+        shiftType: shiftForm.shiftType,
+        notes: shiftForm.notes || null,
+      });
+    }
     setShowAddShift(false);
-    setShiftForm({ employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '' });
+    resetForm();
     load();
   };
 
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (quickAddDay === null || !quickAddEmp) return;
-    await api.post(`/schedules/${id}/shifts`, {
-      employeeId: quickAddEmp,
-      dayOfWeek: quickAddDay,
-      startTime: shiftForm.startTime,
-      endTime: shiftForm.endTime,
-      shiftType: shiftForm.shiftType,
-      notes: shiftForm.notes || null,
-    });
+    if (shiftForm.shiftType === 'SPLIT') {
+      await api.post(`/schedules/${id}/shifts/bulk`, {
+        shifts: [
+          { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
+          { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
+          { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
+        ],
+      });
+    } else {
+      await api.post(`/schedules/${id}/shifts`, {
+        employeeId: quickAddEmp,
+        dayOfWeek: quickAddDay,
+        startTime: shiftForm.startTime,
+        endTime: shiftForm.endTime,
+        shiftType: shiftForm.shiftType,
+        notes: shiftForm.notes || null,
+      });
+    }
     setQuickAddDay(null);
     setQuickAddEmp(null);
-    setShiftForm({ ...shiftForm, notes: '' });
+    resetForm();
+    load();
+  };
+
+  const handleEditShift = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingShift) return;
+    await api.put(`/schedules/shifts/${editingShift.id}`, {
+      startTime: shiftForm.startTime,
+      endTime: shiftForm.endTime,
+      shiftType: shiftForm.shiftType === 'SPLIT' ? 'WORK' : shiftForm.shiftType,
+      notes: shiftForm.notes || null,
+    });
+    setEditingShift(null);
+    resetForm();
     load();
   };
 
@@ -88,11 +134,36 @@ export default function ScheduleDetail() {
     load();
   };
 
+  const resetForm = () => {
+    setShiftForm({ employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '', splitStart1: '09:00', splitEnd1: '14:00', splitStart2: '15:00', splitEnd2: '22:00' });
+  };
+
+  const openEditShift = (shift: Shift) => {
+    setEditingShift(shift);
+    setShiftForm({
+      ...shiftForm,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      shiftType: shift.shiftType,
+      notes: shift.notes || '',
+    });
+  };
+
+  const getShareUrl = () => {
+    if (!schedule?.restaurant?.shareToken) return '';
+    return `${window.location.origin}/schedule/${schedule.restaurant.shareToken}`;
+  };
+
+  const copyShareLink = () => {
+    navigator.clipboard.writeText(getShareUrl());
+    setCopiedShare(true);
+    setTimeout(() => setCopiedShare(false), 2000);
+  };
+
   if (!schedule) return <div style={{ padding: 40, color: 'var(--color-text-muted)' }}>Loading...</div>;
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-  // Get the date for each day of the week
   const getDateForDay = (dayIdx: number) => {
     const start = new Date(schedule.weekStart);
     const d = new Date(start);
@@ -114,7 +185,6 @@ export default function ScheduleDetail() {
 
   const getShiftTypeColor = (type: string) => {
     switch (type) {
-      case 'WORK': return '';
       case 'BREAK': return 'shift-break';
       case 'DAY_OFF': return 'shift-dayoff';
       case 'SICK': return 'shift-sick';
@@ -134,6 +204,65 @@ export default function ScheduleDetail() {
     }
   };
 
+  // Shift type picker used in forms (excludes SPLIT for edit)
+  const renderShiftTypePicker = (includeSplit: boolean) => (
+    <div className="shift-type-picker">
+      {SHIFT_TYPES.filter(st => includeSplit || st.value !== 'SPLIT').map(st => (
+        <button
+          key={st.value}
+          type="button"
+          className={`shift-type-btn ${shiftForm.shiftType === st.value ? 'active' : ''}`}
+          onClick={() => setShiftForm({ ...shiftForm, shiftType: st.value })}
+        >
+          <st.icon size={14} /> {st.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // Time fields for WORK/BREAK
+  const renderTimeFields = () => (
+    <div className="form-row" style={{ marginTop: 12 }}>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="label">Start</label>
+        <input className="input" type="time" value={shiftForm.startTime} onChange={e => setShiftForm({ ...shiftForm, startTime: e.target.value })} required />
+      </div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="label">End</label>
+        <input className="input" type="time" value={shiftForm.endTime} onChange={e => setShiftForm({ ...shiftForm, endTime: e.target.value })} required />
+      </div>
+    </div>
+  );
+
+  // Time fields for SPLIT shift
+  const renderSplitFields = () => (
+    <div style={{ marginTop: 12 }}>
+      <div className="split-label">Morning Shift</div>
+      <div className="form-row">
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="label">Start</label>
+          <input className="input" type="time" value={shiftForm.splitStart1} onChange={e => setShiftForm({ ...shiftForm, splitStart1: e.target.value })} required />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="label">End</label>
+          <input className="input" type="time" value={shiftForm.splitEnd1} onChange={e => setShiftForm({ ...shiftForm, splitEnd1: e.target.value })} required />
+        </div>
+      </div>
+      <div className="split-break-label">Break: {shiftForm.splitEnd1} - {shiftForm.splitStart2}</div>
+      <div className="split-label">Afternoon Shift</div>
+      <div className="form-row">
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="label">Start</label>
+          <input className="input" type="time" value={shiftForm.splitStart2} onChange={e => setShiftForm({ ...shiftForm, splitStart2: e.target.value })} required />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="label">End</label>
+          <input className="input" type="time" value={shiftForm.splitEnd2} onChange={e => setShiftForm({ ...shiftForm, splitEnd2: e.target.value })} required />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <button className="btn btn-ghost" style={{ marginBottom: 20 }} onClick={() => navigate('/app/scheduling')}>
@@ -145,8 +274,10 @@ export default function ScheduleDetail() {
           <h1 className="page-title">{schedule.restaurant.name}</h1>
           <p className="page-subtitle">{formatDate(schedule.weekStart)} - {formatDate(schedule.weekEnd)}</p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={() => setShowSharePopup(true)}><Share2 size={18} /> Share</button>
           <button className="btn btn-secondary" onClick={() => setShowSummary(true)}><BarChart3 size={18} /> Report</button>
+          <button className="btn btn-secondary" onClick={() => navigate(`/app/scheduling/salaries/${schedule.restaurant.id}`)}><DollarSign size={18} /> Salaries</button>
           <button className={`btn ${schedule.published ? 'btn-secondary' : 'btn-primary'}`} onClick={handlePublish}>
             <Check size={18} /> {schedule.published ? 'Unpublish' : 'Publish'}
           </button>
@@ -186,10 +317,15 @@ export default function ScheduleDetail() {
                   <div
                     key={dayIdx}
                     className="schedule-cell schedule-day-cell"
-                    onClick={() => { setQuickAddDay(dayIdx); setQuickAddEmp(employee.id); setShiftForm({ ...shiftForm, shiftType: 'WORK', startTime: '09:00', endTime: '17:00', notes: '' }); }}
+                    onClick={() => { setQuickAddDay(dayIdx); setQuickAddEmp(employee.id); resetForm(); }}
                   >
                     {(shifts[dayIdx] || []).map(shift => (
-                      <div key={shift.id} className={`shift-block ${getShiftTypeColor(shift.shiftType)}`} style={shift.shiftType === 'WORK' ? { borderLeftColor: employee.color || '#c8956c' } : undefined} onClick={e => e.stopPropagation()}>
+                      <div
+                        key={shift.id}
+                        className={`shift-block ${getShiftTypeColor(shift.shiftType)}`}
+                        style={shift.shiftType === 'WORK' ? { borderLeftColor: employee.color || '#c8956c' } : undefined}
+                        onClick={e => { e.stopPropagation(); openEditShift(shift); }}
+                      >
                         <div className="shift-time">
                           {getShiftTypeIcon(shift.shiftType)}
                           {shift.shiftType === 'DAY_OFF' || shift.shiftType === 'SICK' || shift.shiftType === 'VACATION'
@@ -197,7 +333,7 @@ export default function ScheduleDetail() {
                             : `${shift.startTime} - ${shift.endTime}`}
                         </div>
                         {shift.notes && <div className="shift-notes">{shift.notes}</div>}
-                        <button className="shift-delete" onClick={() => handleDeleteShift(shift.id)}><Trash2 size={12} /></button>
+                        <button className="shift-delete" onClick={e => { e.stopPropagation(); handleDeleteShift(shift.id); }}><Trash2 size={12} /></button>
                       </div>
                     ))}
                   </div>
@@ -208,36 +344,40 @@ export default function ScheduleDetail() {
         </div>
       </div>
 
+      {/* Edit Shift Modal */}
+      {editingShift && (
+        <div className="quick-add-overlay" onClick={() => setEditingShift(null)}>
+          <div className="quick-add-popover" onClick={e => e.stopPropagation()}>
+            <h3>Edit Shift - {editingShift.employee.name}</h3>
+            <form onSubmit={handleEditShift}>
+              {renderShiftTypePicker(false)}
+              {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && renderTimeFields()}
+              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                <input className="input" value={shiftForm.notes} onChange={e => setShiftForm({ ...shiftForm, notes: e.target.value })} placeholder="Notes (optional)" />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 12 }}>
+                <button type="button" className="btn btn-danger btn-sm" onClick={() => { handleDeleteShift(editingShift.id); setEditingShift(null); }}>
+                  <Trash2 size={14} /> Delete
+                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingShift(null)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary btn-sm">Save</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Quick Add Popover */}
-      {quickAddDay !== null && quickAddEmp && (
+      {quickAddDay !== null && quickAddEmp && !editingShift && (
         <div className="quick-add-overlay" onClick={() => { setQuickAddDay(null); setQuickAddEmp(null); }}>
           <div className="quick-add-popover" onClick={e => e.stopPropagation()}>
             <h3>Add Shift - {employees.find(e => e.id === quickAddEmp)?.name} ({DAYS[quickAddDay]})</h3>
             <form onSubmit={handleQuickAdd}>
-              <div className="shift-type-picker">
-                {SHIFT_TYPES.map(st => (
-                  <button
-                    key={st.value}
-                    type="button"
-                    className={`shift-type-btn ${shiftForm.shiftType === st.value ? 'active' : ''}`}
-                    onClick={() => setShiftForm({ ...shiftForm, shiftType: st.value })}
-                  >
-                    <st.icon size={14} /> {st.label}
-                  </button>
-                ))}
-              </div>
-              {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && (
-                <div className="form-row" style={{ marginTop: 12 }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="label">Start</label>
-                    <input className="input" type="time" value={shiftForm.startTime} onChange={e => setShiftForm({ ...shiftForm, startTime: e.target.value })} required />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="label">End</label>
-                    <input className="input" type="time" value={shiftForm.endTime} onChange={e => setShiftForm({ ...shiftForm, endTime: e.target.value })} required />
-                  </div>
-                </div>
-              )}
+              {renderShiftTypePicker(true)}
+              {shiftForm.shiftType === 'SPLIT' && renderSplitFields()}
+              {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && renderTimeFields()}
               <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
                 <input className="input" value={shiftForm.notes} onChange={e => setShiftForm({ ...shiftForm, notes: e.target.value })} placeholder="Notes (optional)" />
               </div>
@@ -270,19 +410,9 @@ export default function ScheduleDetail() {
           </div>
           <div className="form-group">
             <label className="label">Type</label>
-            <div className="shift-type-picker">
-              {SHIFT_TYPES.map(st => (
-                <button
-                  key={st.value}
-                  type="button"
-                  className={`shift-type-btn ${shiftForm.shiftType === st.value ? 'active' : ''}`}
-                  onClick={() => setShiftForm({ ...shiftForm, shiftType: st.value })}
-                >
-                  <st.icon size={14} /> {st.label}
-                </button>
-              ))}
-            </div>
+            {renderShiftTypePicker(true)}
           </div>
+          {shiftForm.shiftType === 'SPLIT' && renderSplitFields()}
           {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && (
             <div className="form-row">
               <div className="form-group">
@@ -305,6 +435,38 @@ export default function ScheduleDetail() {
           </div>
         </form>
       </Modal>
+
+      {/* Share Schedule Popup */}
+      {showSharePopup && (
+        <div className="quick-add-overlay" onClick={() => setShowSharePopup(false)}>
+          <div className="quick-add-popover" onClick={e => e.stopPropagation()}>
+            <h3>Share Schedule</h3>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 12 }}>
+              Share this link with your team. It shows the current week's published schedule (view only, no login required). The link stays the same for this restaurant.
+            </p>
+            {schedule.published ? (
+              <>
+                <div className="share-link-box">
+                  <input className="input" readOnly value={getShareUrl()} style={{ fontSize: 12 }} />
+                  <button className="btn btn-primary btn-sm" onClick={copyShareLink}>
+                    <Copy size={14} /> {copiedShare ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                <p style={{ marginBottom: 8 }}>Publish the schedule first to make it visible via the share link.</p>
+                <button className="btn btn-primary btn-sm" onClick={() => { handlePublish(); }}>
+                  <Check size={14} /> Publish Now
+                </button>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowSharePopup(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary / Report Modal */}
       <Modal isOpen={showSummary} onClose={() => setShowSummary(false)} title="Weekly Hours Report" width="800px">

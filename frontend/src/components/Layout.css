@@ -26,11 +26,12 @@
   gap: 10px;
 }
 
-.sidebar-logo .logo-mark {
+.sidebar-logo .logo-img {
   width: 34px;
   height: 34px;
-  font-size: 18px;
   border-radius: 10px;
+  object-fit: cover;
+  background: #fff;
 }
 
 .sidebar-logo .logo-text {

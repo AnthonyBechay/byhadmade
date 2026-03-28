@@ -26,6 +26,7 @@ export default function Scheduling() {
   const [restForm, setRestForm] = useState({ name: '', address: '' });
   const [empForm, setEmpForm] = useState({ name: '', role: '', phone: '', email: '', color: COLORS[0], hourlyRate: '', restaurantId: '' });
   const [schedForm, setSchedForm] = useState({ weekStart: '', restaurantId: '' });
+  const [schedError, setSchedError] = useState('');
 
   const load = () => {
     api.get('/restaurants').then(setRestaurants).catch(() => {});
@@ -78,17 +79,42 @@ export default function Scheduling() {
 
   const handleCreateSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      const schedule = await api.post('/schedules', {
+        weekStart: new Date(schedForm.weekStart).toISOString(),
+        restaurantId: schedForm.restaurantId,
+      });
+      setShowSchedModal(false);
+      setSchedForm({ weekStart: '', restaurantId: '' });
+      setSchedError('');
+      navigate(`/app/scheduling/${schedule.id}`);
+    } catch (err: any) {
+      if (err.message?.includes('already exists')) {
+        setSchedError('A schedule already exists for this week and restaurant.');
+      } else {
+        setSchedError(err.message || 'Failed to create schedule');
+      }
+    }
+  };
+
+  // Snap date input to Monday of the selected week
+  const handleWeekDateChange = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const day = date.getDay(); // 0=Sun, 1=Mon...
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    date.setDate(date.getDate() + diffToMonday);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    setSchedForm({ ...schedForm, weekStart: `${yyyy}-${mm}-${dd}` });
+  };
+
+  const getWeekEndDisplay = () => {
+    if (!schedForm.weekStart) return '';
     const start = new Date(schedForm.weekStart);
     const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    const schedule = await api.post('/schedules', {
-      weekStart: start.toISOString(),
-      weekEnd: end.toISOString(),
-      restaurantId: schedForm.restaurantId,
-    });
-    setShowSchedModal(false);
-    setSchedForm({ weekStart: '', restaurantId: '' });
-    navigate(`/app/scheduling/${schedule.id}`);
+    end.setDate(start.getDate() + 6);
+    return `${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   const handleDuplicate = async (sched: Schedule) => {
@@ -309,7 +335,7 @@ export default function Scheduling() {
       </Modal>
 
       {/* Schedule Modal */}
-      <Modal isOpen={showSchedModal} onClose={() => setShowSchedModal(false)} title="New Schedule">
+      <Modal isOpen={showSchedModal} onClose={() => { setShowSchedModal(false); setSchedError(''); }} title="New Schedule">
         <form onSubmit={handleCreateSchedule}>
           <div className="form-group">
             <label className="label">Restaurant *</label>
@@ -319,11 +345,21 @@ export default function Scheduling() {
             </select>
           </div>
           <div className="form-group">
-            <label className="label">Week Starting (Monday) *</label>
-            <input className="input" type="date" value={schedForm.weekStart} onChange={e => setSchedForm({ ...schedForm, weekStart: e.target.value })} required />
+            <label className="label">Select any day in the week *</label>
+            <input className="input" type="date" value={schedForm.weekStart} onChange={e => handleWeekDateChange(e.target.value)} required />
+            {schedForm.weekStart && (
+              <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                Week: {getWeekEndDisplay()}
+              </div>
+            )}
           </div>
+          {schedError && (
+            <div style={{ fontSize: 13, color: '#e05555', marginBottom: 12, padding: '8px 12px', background: 'rgba(224, 85, 85, 0.08)', borderRadius: 6 }}>
+              {schedError}
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setShowSchedModal(false)}>Cancel</button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowSchedModal(false); setSchedError(''); }}>Cancel</button>
             <button type="submit" className="btn btn-primary">Create Schedule</button>
           </div>
         </form>

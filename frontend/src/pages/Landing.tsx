@@ -11,7 +11,7 @@ export default function Landing() {
       <nav className="landing-nav">
         <div className="landing-nav-inner">
           <div className="landing-logo">
-            <span className="logo-mark">H</span>
+            <img src="/logo.png" alt="ByHadMade" className="logo-mark-img" />
             <span className="logo-text">ByHadMade</span>
           </div>
           <div className="landing-nav-links">
@@ -144,7 +144,7 @@ export default function Landing() {
       <footer className="landing-footer">
         <div className="footer-inner">
           <div className="footer-logo">
-            <span className="logo-mark">H</span>
+            <img src="/logo.png" alt="ByHadMade" className="logo-mark-img" />
             <span className="logo-text">ByHadMade</span>
           </div>
           <p className="footer-text">Handcrafted with love.</p>

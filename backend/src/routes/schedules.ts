@@ -5,6 +5,55 @@ import { authenticate } from '../middleware/auth';
 const router = Router();
 const prisma = new PrismaClient();
 
+// ─── Public route: shared schedule (no auth) ───
+router.get('/public/:shareToken', async (req, res) => {
+  try {
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { shareToken: req.params.shareToken },
+    });
+    if (!restaurant) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+
+    // Find the current week's schedule (Monday of this week)
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    const schedule = await prisma.schedule.findFirst({
+      where: {
+        restaurantId: restaurant.id,
+        published: true,
+        weekStart: { gte: monday, lte: sunday },
+      },
+      include: {
+        shifts: {
+          include: { employee: { select: { id: true, name: true, role: true, color: true } } },
+          orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+        },
+      },
+    });
+
+    res.json({
+      restaurant: { name: restaurant.name, address: restaurant.address },
+      schedule: schedule || null,
+      weekStart: monday.toISOString(),
+      weekEnd: sunday.toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch public schedule' });
+  }
+});
+
+// ─── All other routes require auth ───
 router.use(authenticate);
 
 // Get schedules for a restaurant
@@ -123,7 +172,6 @@ router.get('/:id/summary', async (req, res) => {
       }
     }
 
-    // Convert Sets to counts for JSON serialization
     const result: Record<string, any> = {};
     for (const [id, emp] of Object.entries(summary)) {
       result[id] = {
@@ -136,6 +184,103 @@ router.get('/:id/summary', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate summary' });
+  }
+});
+
+// Monthly salary report for a restaurant
+router.get('/salary-report/:restaurantId', async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const m = parseInt(month as string) || (new Date().getMonth() + 1);
+    const y = parseInt(year as string) || new Date().getFullYear();
+
+    // Get all schedules whose weeks overlap with the given month
+    const monthStart = new Date(y, m - 1, 1);
+    const monthEnd = new Date(y, m, 0, 23, 59, 59, 999);
+
+    const schedules = await prisma.schedule.findMany({
+      where: {
+        restaurantId: req.params.restaurantId,
+        weekStart: { lte: monthEnd },
+        weekEnd: { gte: monthStart },
+      },
+      include: {
+        shifts: { include: { employee: true } },
+      },
+      orderBy: { weekStart: 'asc' },
+    });
+
+    const employees: Record<string, {
+      name: string;
+      role: string | null;
+      color: string | null;
+      hourlyRate: number | null;
+      totalWorkHours: number;
+      totalBreakHours: number;
+      totalShifts: number;
+      daysWorked: number;
+      weeklyBreakdown: Record<string, { workHours: number; breakHours: number; shifts: number }>;
+    }> = {};
+
+    for (const schedule of schedules) {
+      const weekKey = schedule.weekStart.toISOString().split('T')[0];
+
+      for (const shift of schedule.shifts) {
+        if (!employees[shift.employeeId]) {
+          employees[shift.employeeId] = {
+            name: shift.employee.name,
+            role: shift.employee.role,
+            color: shift.employee.color,
+            hourlyRate: shift.employee.hourlyRate,
+            totalWorkHours: 0,
+            totalBreakHours: 0,
+            totalShifts: 0,
+            daysWorked: 0,
+            weeklyBreakdown: {},
+          };
+        }
+
+        const emp = employees[shift.employeeId];
+        if (!emp.weeklyBreakdown[weekKey]) {
+          emp.weeklyBreakdown[weekKey] = { workHours: 0, breakHours: 0, shifts: 0 };
+        }
+
+        const [startH, startM] = shift.startTime.split(':').map(Number);
+        const [endH, endM] = shift.endTime.split(':').map(Number);
+        const hours = (endH + endM / 60) - (startH + startM / 60);
+
+        if (shift.shiftType === 'WORK') {
+          emp.weeklyBreakdown[weekKey].workHours += hours;
+          emp.weeklyBreakdown[weekKey].shifts += 1;
+          emp.totalWorkHours += hours;
+          emp.totalShifts += 1;
+        } else if (shift.shiftType === 'BREAK') {
+          emp.weeklyBreakdown[weekKey].breakHours += hours;
+          emp.totalBreakHours += hours;
+        }
+      }
+    }
+
+    // Calculate pay
+    const result: Record<string, any> = {};
+    for (const [id, emp] of Object.entries(employees)) {
+      result[id] = {
+        ...emp,
+        salary: emp.hourlyRate ? emp.totalWorkHours * emp.hourlyRate : null,
+      };
+    }
+
+    const totalSalary = Object.values(result).reduce((sum: number, emp: any) => sum + (emp.salary || 0), 0);
+
+    res.json({
+      month: m,
+      year: y,
+      scheduleCount: schedules.length,
+      employees: result,
+      totalSalary,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate salary report' });
   }
 });
 
@@ -155,7 +300,6 @@ router.get('/report/:restaurantId', async (req, res) => {
       orderBy: { weekStart: 'asc' },
     });
 
-    // Aggregate by employee across all weeks
     const report: Record<string, {
       name: string;
       role: string | null;
@@ -203,7 +347,6 @@ router.get('/report/:restaurantId', async (req, res) => {
       }
     }
 
-    // Add estimated pay
     const result: Record<string, any> = {};
     for (const [id, emp] of Object.entries(report)) {
       result[id] = {
@@ -223,11 +366,35 @@ router.get('/report/:restaurantId', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { weekStart, weekEnd, restaurantId, notes } = req.body;
+    const { weekStart, restaurantId, notes } = req.body;
+
+    // Snap to Monday of the selected week
+    const date = new Date(weekStart);
+    const day = date.getDay(); // 0=Sun, 1=Mon...
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    date.setDate(date.getDate() + diffToMonday);
+    date.setHours(0, 0, 0, 0);
+
+    const end = new Date(date);
+    end.setDate(date.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    // Check for existing schedule for this week + restaurant
+    const existing = await prisma.schedule.findFirst({
+      where: {
+        restaurantId,
+        weekStart: date,
+      },
+    });
+    if (existing) {
+      res.status(409).json({ error: 'A schedule already exists for this week and restaurant', existingId: existing.id });
+      return;
+    }
+
     const schedule = await prisma.schedule.create({
       data: {
-        weekStart: new Date(weekStart),
-        weekEnd: new Date(weekEnd),
+        weekStart: date,
+        weekEnd: end,
         restaurantId,
         notes,
       },
@@ -252,13 +419,29 @@ router.post('/:id/duplicate', async (req, res) => {
       return;
     }
 
-    const start = new Date(weekStart);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
+    // Snap to Monday
+    const date = new Date(weekStart);
+    const day = date.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    date.setDate(date.getDate() + diffToMonday);
+    date.setHours(0, 0, 0, 0);
+
+    const end = new Date(date);
+    end.setDate(date.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    // Check for existing
+    const existing = await prisma.schedule.findFirst({
+      where: { restaurantId: source.restaurantId, weekStart: date },
+    });
+    if (existing) {
+      res.status(409).json({ error: 'A schedule already exists for this week and restaurant', existingId: existing.id });
+      return;
+    }
 
     const newSchedule = await prisma.schedule.create({
       data: {
-        weekStart: start,
+        weekStart: date,
         weekEnd: end,
         restaurantId: source.restaurantId,
         shifts: {

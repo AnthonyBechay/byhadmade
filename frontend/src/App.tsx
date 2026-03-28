@@ -9,6 +9,8 @@ import MenuDetail from './pages/MenuDetail';
 import Ingredients from './pages/Ingredients';
 import Scheduling from './pages/Scheduling';
 import ScheduleDetail from './pages/ScheduleDetail';
+import Salaries from './pages/Salaries';
+import PublicSchedule from './pages/PublicSchedule';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -23,6 +25,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/schedule/:shareToken" element={<PublicSchedule />} />
         <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="recipes" element={<Recipes />} />
@@ -32,6 +35,7 @@ export default function App() {
           <Route path="menus/:id" element={<MenuDetail />} />
           <Route path="scheduling" element={<Scheduling />} />
           <Route path="scheduling/:id" element={<ScheduleDetail />} />
+          <Route path="scheduling/salaries/:restaurantId" element={<Salaries />} />
         </Route>
       </Routes>
     </BrowserRouter>

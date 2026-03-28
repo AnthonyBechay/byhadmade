@@ -32,18 +32,12 @@
   gap: 12px;
 }
 
-.logo-mark {
+.logo-mark-img {
   width: 40px;
   height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
   border-radius: 12px;
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
+  object-fit: cover;
+  background: #fff;
 }
 
 .logo-text {

@@ -35,7 +35,7 @@ export default function Login() {
       <div className="login-card">
         <div className="login-header">
           <div className="login-logo">
-            <span className="logo-mark">H</span>
+            <img src="/logo.png" alt="ByHadMade" className="login-logo-img" />
           </div>
           <h1>Welcome Back</h1>
           <p>Sign in to your kitchen</p>
