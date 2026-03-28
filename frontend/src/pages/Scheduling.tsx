@@ -285,7 +285,6 @@ export default function Scheduling() {
                     <strong style={{ fontSize: 16 }}>{rest.name}</strong>
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button className="btn-icon" title="Salaries" onClick={() => navigate(`/app/scheduling/salaries/${rest.id}`)}><DollarSign size={14} /></button>
                     <button className="btn-icon" title="Edit" onClick={() => openEditRest(rest)}><Edit3 size={14} /></button>
                     <button className="btn-icon" title="Delete" onClick={async () => { if (confirm('Delete restaurant and all its employees?')) { await api.delete(`/restaurants/${rest.id}`); load(); } }}><Trash2 size={14} /></button>
                   </div>
@@ -294,6 +293,9 @@ export default function Scheduling() {
                 {rest.phone && <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>{rest.phone}</div>}
                 {rest.details && <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 4, fontStyle: 'italic' }}>{rest.details}</div>}
                 <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>{rest._count.employees} employees</div>
+                <button className="btn btn-secondary btn-sm" style={{ marginTop: 10, width: '100%' }} onClick={() => navigate(`/app/scheduling/salaries/${rest.id}`)}>
+                  <DollarSign size={14} /> Salaries
+                </button>
               </div>
             ))}
           </div>

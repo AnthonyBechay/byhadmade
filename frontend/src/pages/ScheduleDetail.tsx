@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, Sun, Umbrella, Thermometer, Edit3, Share2, Copy, Scissors, Printer } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, BarChart3, Sun, Umbrella, Thermometer, Edit3, Share2, Copy, Scissors, Printer } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './ScheduleDetail.css';
@@ -21,13 +21,21 @@ interface Employee { id: string; name: string; role: string | null; color: strin
 interface Shift { id: string; dayOfWeek: number; startTime: string; endTime: string; shiftType: string; notes: string | null; employee: Employee }
 interface Restaurant { id: string; name: string; shareToken?: string }
 interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; notes: string | null; restaurant: Restaurant; shifts: Shift[] }
+interface SummaryEntry {
+  name: string; role: string | null; color: string | null; hourlyRate: number | null;
+  totalWorkHours: number; totalBreakHours: number; workShifts: number; daysWorked: number;
+  dailyBreakdown: Record<number, { work: number; break: number }>;
+  daysOff: number; sickDays: number; vacationDays: number; estimatedPay: number | null;
+}
 
 export default function ScheduleDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [summary, setSummary] = useState<Record<string, SummaryEntry>>({});
   const [showAddShift, setShowAddShift] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const [quickAddDay, setQuickAddDay] = useState<number | null>(null);
   const [quickAddEmp, setQuickAddEmp] = useState<string | null>(null);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
@@ -49,6 +57,7 @@ export default function ScheduleDetail() {
       setSchedule(s);
       api.get(`/employees?restaurantId=${s.restaurant.id}&active=true`).then(setEmployees);
     });
+    api.get(`/schedules/${id}/summary`).then(setSummary).catch(() => {});
   };
 
   useEffect(() => { load(); }, [id]);
@@ -288,6 +297,7 @@ export default function ScheduleDetail() {
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-secondary" onClick={() => window.print()}><Printer size={18} /> Print</button>
+          <button className="btn btn-secondary" onClick={() => setShowSummary(true)}><BarChart3 size={18} /> Report</button>
           <button className="btn btn-secondary" onClick={() => setShowSharePopup(true)}><Share2 size={18} /> Share</button>
           <button className={`btn ${schedule.published ? 'btn-secondary' : 'btn-primary'}`} onClick={handlePublish}>
             <Check size={18} /> {schedule.published ? 'Unpublish' : 'Publish'}
@@ -482,6 +492,78 @@ export default function ScheduleDetail() {
         </div>
       )}
 
+      {/* Summary / Report Modal */}
+      <Modal isOpen={showSummary} onClose={() => setShowSummary(false)} title="Weekly Hours Report" width="800px">
+        {Object.keys(summary).length === 0 ? (
+          <p style={{ color: 'var(--color-text-muted)', textAlign: 'center', padding: 20 }}>No shifts to report on</p>
+        ) : (
+          <div>
+            <div className="summary-table">
+              <div className="summary-header">
+                <span style={{ flex: 2 }}>Employee</span>
+                <span>Days</span>
+                <span>Shifts</span>
+                <span>Work Hrs</span>
+                <span>Break Hrs</span>
+                <span>Off/Sick/Vac</span>
+                <span>Est. Pay</span>
+              </div>
+              {Object.entries(summary).map(([empId, emp]) => (
+                <div key={empId} className="summary-row">
+                  <span style={{ flex: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div className="emp-indicator" style={{ background: emp.color || '#c8956c' }} />
+                    <div>
+                      <strong>{emp.name}</strong>
+                      {emp.role && <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-muted)' }}>{emp.role}</span>}
+                    </div>
+                  </span>
+                  <span>{emp.daysWorked}</span>
+                  <span>{emp.workShifts}</span>
+                  <span className="summary-hours">{emp.totalWorkHours.toFixed(1)}h</span>
+                  <span>{emp.totalBreakHours.toFixed(1)}h</span>
+                  <span>{emp.daysOff}/{emp.sickDays}/{emp.vacationDays}</span>
+                  <span className="summary-pay">{emp.estimatedPay != null ? `$${emp.estimatedPay.toFixed(0)}` : '-'}</span>
+                </div>
+              ))}
+              <div className="summary-row summary-footer">
+                <span style={{ flex: 2 }}><strong>Total</strong></span>
+                <span>{Object.values(summary).reduce((s, e) => s + e.daysWorked, 0)}</span>
+                <span>{Object.values(summary).reduce((s, e) => s + e.workShifts, 0)}</span>
+                <span className="summary-hours">{Object.values(summary).reduce((s, e) => s + e.totalWorkHours, 0).toFixed(1)}h</span>
+                <span>{Object.values(summary).reduce((s, e) => s + e.totalBreakHours, 0).toFixed(1)}h</span>
+                <span>-</span>
+                <span className="summary-pay">
+                  ${Object.values(summary).reduce((s, e) => s + (e.estimatedPay || 0), 0).toFixed(0)}
+                </span>
+              </div>
+            </div>
+
+            {/* Daily breakdown */}
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, margin: '24px 0 12px' }}>Daily Breakdown</h3>
+            <div className="daily-breakdown">
+              <div className="daily-header">
+                <span style={{ flex: 2 }}>Employee</span>
+                {DAYS_SHORT.map(d => <span key={d}>{d}</span>)}
+                <span>Total</span>
+              </div>
+              {Object.entries(summary).map(([empId, emp]) => (
+                <div key={empId} className="daily-row">
+                  <span style={{ flex: 2, fontSize: 13 }}>{emp.name}</span>
+                  {[0, 1, 2, 3, 4, 5, 6].map(day => {
+                    const bd = emp.dailyBreakdown[day];
+                    return (
+                      <span key={day} className="daily-cell">
+                        {bd ? `${bd.work.toFixed(1)}h` : '-'}
+                      </span>
+                    );
+                  })}
+                  <span className="daily-cell daily-total">{emp.totalWorkHours.toFixed(1)}h</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
