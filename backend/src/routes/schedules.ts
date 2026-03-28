@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -9,16 +9,15 @@ const prisma = new PrismaClient();
 router.get('/public/:shareToken', async (req, res) => {
   try {
     const restaurant = await prisma.restaurant.findUnique({
-      where: { shareToken: req.params.shareToken },
+      where: { shareToken: req.params.shareToken as string },
     });
     if (!restaurant) {
       res.status(404).json({ error: 'Not found' });
       return;
     }
 
-    // Find the current week's schedule (Monday of this week)
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+    const dayOfWeek = now.getDay();
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     const monday = new Date(now);
     monday.setDate(now.getDate() + diffToMonday);
@@ -56,12 +55,19 @@ router.get('/public/:shareToken', async (req, res) => {
 // ─── All other routes require auth ───
 router.use(authenticate);
 
-// Get schedules for a restaurant
-router.get('/', async (req, res) => {
+// Helper to verify restaurant ownership
+async function verifyRestaurant(restaurantId: string, userId: string) {
+  return prisma.restaurant.findFirst({ where: { id: restaurantId, userId } });
+}
+
+router.get('/', async (req: AuthRequest, res) => {
   try {
     const { restaurantId } = req.query;
+    const where: any = { restaurant: { userId: req.userId! } };
+    if (restaurantId) where.restaurantId = restaurantId as string;
+
     const schedules = await prisma.schedule.findMany({
-      where: restaurantId ? { restaurantId: restaurantId as string } : undefined,
+      where,
       include: {
         restaurant: true,
         shifts: { include: { employee: true }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] },
@@ -74,10 +80,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: AuthRequest, res) => {
   try {
-    const schedule = await prisma.schedule.findUnique({
-      where: { id: req.params.id },
+    const schedule = await prisma.schedule.findFirst({
+      where: { id: req.params.id as string, restaurant: { userId: req.userId! } },
       include: {
         restaurant: true,
         shifts: { include: { employee: true }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] },
@@ -93,14 +99,12 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Get weekly hour summary with detailed breakdown
-router.get('/:id/summary', async (req, res) => {
+// Weekly hour summary
+router.get('/:id/summary', async (req: AuthRequest, res) => {
   try {
-    const schedule = await prisma.schedule.findUnique({
-      where: { id: req.params.id },
-      include: {
-        shifts: { include: { employee: true } },
-      },
+    const schedule = await prisma.schedule.findFirst({
+      where: { id: req.params.id as string, restaurant: { userId: req.userId! } },
+      include: { shifts: { include: { employee: true } } },
     });
     if (!schedule) {
       res.status(404).json({ error: 'Schedule not found' });
@@ -108,318 +112,142 @@ router.get('/:id/summary', async (req, res) => {
     }
 
     const summary: Record<string, {
-      name: string;
-      role: string | null;
-      color: string | null;
-      hourlyRate: number | null;
-      totalWorkHours: number;
-      totalBreakHours: number;
-      workShifts: number;
-      daysWorked: Set<number>;
-      dailyBreakdown: Record<number, { work: number; break: number }>;
-      daysOff: number;
-      sickDays: number;
-      vacationDays: number;
+      name: string; role: string | null; color: string | null; hourlyRate: number | null;
+      totalWorkHours: number; totalBreakHours: number; workShifts: number;
+      daysWorked: Set<number>; dailyBreakdown: Record<number, { work: number; break: number }>;
+      daysOff: number; sickDays: number; vacationDays: number;
     }> = {};
 
     for (const shift of schedule.shifts) {
       if (!summary[shift.employeeId]) {
         summary[shift.employeeId] = {
-          name: shift.employee.name,
-          role: shift.employee.role,
-          color: shift.employee.color,
-          hourlyRate: shift.employee.hourlyRate,
-          totalWorkHours: 0,
-          totalBreakHours: 0,
-          workShifts: 0,
-          daysWorked: new Set(),
-          dailyBreakdown: {},
-          daysOff: 0,
-          sickDays: 0,
-          vacationDays: 0,
+          name: shift.employee.name, role: shift.employee.role, color: shift.employee.color,
+          hourlyRate: shift.employee.hourlyRate, totalWorkHours: 0, totalBreakHours: 0,
+          workShifts: 0, daysWorked: new Set(), dailyBreakdown: {},
+          daysOff: 0, sickDays: 0, vacationDays: 0,
         };
       }
-
       const emp = summary[shift.employeeId];
       const [startH, startM] = shift.startTime.split(':').map(Number);
       const [endH, endM] = shift.endTime.split(':').map(Number);
       const hours = (endH + endM / 60) - (startH + startM / 60);
 
-      if (!emp.dailyBreakdown[shift.dayOfWeek]) {
-        emp.dailyBreakdown[shift.dayOfWeek] = { work: 0, break: 0 };
-      }
+      if (!emp.dailyBreakdown[shift.dayOfWeek]) emp.dailyBreakdown[shift.dayOfWeek] = { work: 0, break: 0 };
 
       switch (shift.shiftType) {
-        case 'WORK':
-          emp.totalWorkHours += hours;
-          emp.workShifts += 1;
-          emp.daysWorked.add(shift.dayOfWeek);
-          emp.dailyBreakdown[shift.dayOfWeek].work += hours;
-          break;
-        case 'BREAK':
-          emp.totalBreakHours += hours;
-          emp.dailyBreakdown[shift.dayOfWeek].break += hours;
-          break;
-        case 'DAY_OFF':
-          emp.daysOff += 1;
-          break;
-        case 'SICK':
-          emp.sickDays += 1;
-          break;
-        case 'VACATION':
-          emp.vacationDays += 1;
-          break;
+        case 'WORK': emp.totalWorkHours += hours; emp.workShifts += 1; emp.daysWorked.add(shift.dayOfWeek); emp.dailyBreakdown[shift.dayOfWeek].work += hours; break;
+        case 'BREAK': emp.totalBreakHours += hours; emp.dailyBreakdown[shift.dayOfWeek].break += hours; break;
+        case 'DAY_OFF': emp.daysOff += 1; break;
+        case 'SICK': emp.sickDays += 1; break;
+        case 'VACATION': emp.vacationDays += 1; break;
       }
     }
 
     const result: Record<string, any> = {};
     for (const [id, emp] of Object.entries(summary)) {
-      result[id] = {
-        ...emp,
-        daysWorked: emp.daysWorked.size,
-        estimatedPay: emp.hourlyRate ? emp.totalWorkHours * emp.hourlyRate : null,
-      };
+      result[id] = { ...emp, daysWorked: emp.daysWorked.size, estimatedPay: emp.hourlyRate ? emp.totalWorkHours * emp.hourlyRate : null };
     }
-
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate summary' });
   }
 });
 
-// Monthly salary report for a restaurant
-router.get('/salary-report/:restaurantId', async (req, res) => {
+// Monthly salary report
+router.get('/salary-report/:restaurantId', async (req: AuthRequest, res) => {
   try {
+    const rest = await verifyRestaurant(req.params.restaurantId as string, req.userId!);
+    if (!rest) { res.status(404).json({ error: 'Restaurant not found' }); return; }
+
     const { month, year } = req.query;
     const m = parseInt(month as string) || (new Date().getMonth() + 1);
     const y = parseInt(year as string) || new Date().getFullYear();
-
-    // Get all schedules whose weeks overlap with the given month
     const monthStart = new Date(y, m - 1, 1);
     const monthEnd = new Date(y, m, 0, 23, 59, 59, 999);
 
     const schedules = await prisma.schedule.findMany({
-      where: {
-        restaurantId: req.params.restaurantId,
-        weekStart: { lte: monthEnd },
-        weekEnd: { gte: monthStart },
-      },
-      include: {
-        shifts: { include: { employee: true } },
-      },
+      where: { restaurantId: req.params.restaurantId as string, weekStart: { lte: monthEnd }, weekEnd: { gte: monthStart } },
+      include: { shifts: { include: { employee: true } } },
       orderBy: { weekStart: 'asc' },
     });
 
-    const employees: Record<string, {
-      name: string;
-      role: string | null;
-      color: string | null;
-      hourlyRate: number | null;
-      totalWorkHours: number;
-      totalBreakHours: number;
-      totalShifts: number;
-      daysWorked: number;
-      weeklyBreakdown: Record<string, { workHours: number; breakHours: number; shifts: number }>;
-    }> = {};
-
+    const employees: Record<string, any> = {};
     for (const schedule of schedules) {
       const weekKey = schedule.weekStart.toISOString().split('T')[0];
-
       for (const shift of schedule.shifts) {
         if (!employees[shift.employeeId]) {
           employees[shift.employeeId] = {
-            name: shift.employee.name,
-            role: shift.employee.role,
-            color: shift.employee.color,
-            hourlyRate: shift.employee.hourlyRate,
-            totalWorkHours: 0,
-            totalBreakHours: 0,
-            totalShifts: 0,
-            daysWorked: 0,
-            weeklyBreakdown: {},
+            name: shift.employee.name, role: shift.employee.role, color: shift.employee.color,
+            hourlyRate: shift.employee.hourlyRate, totalWorkHours: 0, totalBreakHours: 0,
+            totalShifts: 0, daysWorked: 0, weeklyBreakdown: {},
           };
         }
-
         const emp = employees[shift.employeeId];
-        if (!emp.weeklyBreakdown[weekKey]) {
-          emp.weeklyBreakdown[weekKey] = { workHours: 0, breakHours: 0, shifts: 0 };
-        }
-
+        if (!emp.weeklyBreakdown[weekKey]) emp.weeklyBreakdown[weekKey] = { workHours: 0, breakHours: 0, shifts: 0 };
         const [startH, startM] = shift.startTime.split(':').map(Number);
         const [endH, endM] = shift.endTime.split(':').map(Number);
         const hours = (endH + endM / 60) - (startH + startM / 60);
-
-        if (shift.shiftType === 'WORK') {
-          emp.weeklyBreakdown[weekKey].workHours += hours;
-          emp.weeklyBreakdown[weekKey].shifts += 1;
-          emp.totalWorkHours += hours;
-          emp.totalShifts += 1;
-        } else if (shift.shiftType === 'BREAK') {
-          emp.weeklyBreakdown[weekKey].breakHours += hours;
-          emp.totalBreakHours += hours;
-        }
+        if (shift.shiftType === 'WORK') { emp.weeklyBreakdown[weekKey].workHours += hours; emp.weeklyBreakdown[weekKey].shifts += 1; emp.totalWorkHours += hours; emp.totalShifts += 1; }
+        else if (shift.shiftType === 'BREAK') { emp.weeklyBreakdown[weekKey].breakHours += hours; emp.totalBreakHours += hours; }
       }
     }
 
-    // Calculate pay
     const result: Record<string, any> = {};
     for (const [id, emp] of Object.entries(employees)) {
-      result[id] = {
-        ...emp,
-        salary: emp.hourlyRate ? emp.totalWorkHours * emp.hourlyRate : null,
-      };
+      result[id] = { ...emp, salary: (emp as any).hourlyRate ? (emp as any).totalWorkHours * (emp as any).hourlyRate : null };
     }
-
     const totalSalary = Object.values(result).reduce((sum: number, emp: any) => sum + (emp.salary || 0), 0);
 
-    res.json({
-      month: m,
-      year: y,
-      scheduleCount: schedules.length,
-      employees: result,
-      totalSalary,
-    });
+    res.json({ month: m, year: y, scheduleCount: schedules.length, employees: result, totalSalary });
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate salary report' });
   }
 });
 
-// Report: get summary across multiple weeks for a restaurant
-router.get('/report/:restaurantId', async (req, res) => {
+// Multi-week report
+router.get('/report/:restaurantId', async (req: AuthRequest, res) => {
   try {
+    const rest = await verifyRestaurant(req.params.restaurantId as string, req.userId!);
+    if (!rest) { res.status(404).json({ error: 'Restaurant not found' }); return; }
+
     const { from, to } = req.query;
-    const where: any = { restaurantId: req.params.restaurantId };
+    const where: any = { restaurantId: req.params.restaurantId as string };
     if (from) where.weekStart = { ...where.weekStart, gte: new Date(from as string) };
     if (to) where.weekEnd = { ...where.weekEnd, lte: new Date(to as string) };
 
-    const schedules = await prisma.schedule.findMany({
-      where,
-      include: {
-        shifts: { include: { employee: true } },
-      },
-      orderBy: { weekStart: 'asc' },
-    });
+    const schedules = await prisma.schedule.findMany({ where, include: { shifts: { include: { employee: true } } }, orderBy: { weekStart: 'asc' } });
 
-    const report: Record<string, {
-      name: string;
-      role: string | null;
-      hourlyRate: number | null;
-      weeklyData: Record<string, { workHours: number; breakHours: number; shifts: number }>;
-      totalWorkHours: number;
-      totalBreakHours: number;
-      totalShifts: number;
-    }> = {};
-
+    const report: Record<string, any> = {};
     for (const schedule of schedules) {
       const weekKey = schedule.weekStart.toISOString().split('T')[0];
-
       for (const shift of schedule.shifts) {
         if (!report[shift.employeeId]) {
-          report[shift.employeeId] = {
-            name: shift.employee.name,
-            role: shift.employee.role,
-            hourlyRate: shift.employee.hourlyRate,
-            weeklyData: {},
-            totalWorkHours: 0,
-            totalBreakHours: 0,
-            totalShifts: 0,
-          };
+          report[shift.employeeId] = { name: shift.employee.name, role: shift.employee.role, hourlyRate: shift.employee.hourlyRate, weeklyData: {}, totalWorkHours: 0, totalBreakHours: 0, totalShifts: 0 };
         }
-
         const emp = report[shift.employeeId];
-        if (!emp.weeklyData[weekKey]) {
-          emp.weeklyData[weekKey] = { workHours: 0, breakHours: 0, shifts: 0 };
-        }
-
+        if (!emp.weeklyData[weekKey]) emp.weeklyData[weekKey] = { workHours: 0, breakHours: 0, shifts: 0 };
         const [startH, startM] = shift.startTime.split(':').map(Number);
         const [endH, endM] = shift.endTime.split(':').map(Number);
         const hours = (endH + endM / 60) - (startH + startM / 60);
-
-        if (shift.shiftType === 'WORK') {
-          emp.weeklyData[weekKey].workHours += hours;
-          emp.weeklyData[weekKey].shifts += 1;
-          emp.totalWorkHours += hours;
-          emp.totalShifts += 1;
-        } else if (shift.shiftType === 'BREAK') {
-          emp.weeklyData[weekKey].breakHours += hours;
-          emp.totalBreakHours += hours;
-        }
+        if (shift.shiftType === 'WORK') { emp.weeklyData[weekKey].workHours += hours; emp.weeklyData[weekKey].shifts += 1; emp.totalWorkHours += hours; emp.totalShifts += 1; }
+        else if (shift.shiftType === 'BREAK') { emp.weeklyData[weekKey].breakHours += hours; emp.totalBreakHours += hours; }
       }
     }
 
     const result: Record<string, any> = {};
-    for (const [id, emp] of Object.entries(report)) {
-      result[id] = {
-        ...emp,
-        estimatedPay: emp.hourlyRate ? emp.totalWorkHours * emp.hourlyRate : null,
-      };
-    }
-
-    res.json({
-      scheduleCount: schedules.length,
-      employees: result,
-    });
+    for (const [id, emp] of Object.entries(report)) { result[id] = { ...emp, estimatedPay: (emp as any).hourlyRate ? (emp as any).totalWorkHours * (emp as any).hourlyRate : null }; }
+    res.json({ scheduleCount: schedules.length, employees: result });
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate report' });
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   try {
     const { weekStart, restaurantId, notes } = req.body;
+    const rest = await verifyRestaurant(restaurantId, req.userId!);
+    if (!rest) { res.status(404).json({ error: 'Restaurant not found' }); return; }
 
-    // Snap to Monday of the selected week
-    const date = new Date(weekStart);
-    const day = date.getDay(); // 0=Sun, 1=Mon...
-    const diffToMonday = day === 0 ? -6 : 1 - day;
-    date.setDate(date.getDate() + diffToMonday);
-    date.setHours(0, 0, 0, 0);
-
-    const end = new Date(date);
-    end.setDate(date.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-
-    // Check for existing schedule for this week + restaurant
-    const existing = await prisma.schedule.findFirst({
-      where: {
-        restaurantId,
-        weekStart: date,
-      },
-    });
-    if (existing) {
-      res.status(409).json({ error: 'A schedule already exists for this week and restaurant', existingId: existing.id });
-      return;
-    }
-
-    const schedule = await prisma.schedule.create({
-      data: {
-        weekStart: date,
-        weekEnd: end,
-        restaurantId,
-        notes,
-      },
-      include: { restaurant: true, shifts: true },
-    });
-    res.status(201).json(schedule);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create schedule' });
-  }
-});
-
-// Duplicate a schedule to a new week
-router.post('/:id/duplicate', async (req, res) => {
-  try {
-    const { weekStart } = req.body;
-    const source = await prisma.schedule.findUnique({
-      where: { id: req.params.id },
-      include: { shifts: true },
-    });
-    if (!source) {
-      res.status(404).json({ error: 'Schedule not found' });
-      return;
-    }
-
-    // Snap to Monday
     const date = new Date(weekStart);
     const day = date.getDay();
     const diffToMonday = day === 0 ? -6 : 1 - day;
@@ -430,10 +258,41 @@ router.post('/:id/duplicate', async (req, res) => {
     end.setDate(date.getDate() + 6);
     end.setHours(23, 59, 59, 999);
 
-    // Check for existing
-    const existing = await prisma.schedule.findFirst({
-      where: { restaurantId: source.restaurantId, weekStart: date },
+    const existing = await prisma.schedule.findFirst({ where: { restaurantId, weekStart: date } });
+    if (existing) {
+      res.status(409).json({ error: 'A schedule already exists for this week and restaurant', existingId: existing.id });
+      return;
+    }
+
+    const schedule = await prisma.schedule.create({
+      data: { weekStart: date, weekEnd: end, restaurantId, notes },
+      include: { restaurant: true, shifts: true },
     });
+    res.status(201).json(schedule);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create schedule' });
+  }
+});
+
+router.post('/:id/duplicate', async (req: AuthRequest, res) => {
+  try {
+    const { weekStart } = req.body;
+    const source = await prisma.schedule.findFirst({
+      where: { id: req.params.id as string, restaurant: { userId: req.userId! } },
+      include: { shifts: true },
+    });
+    if (!source) { res.status(404).json({ error: 'Schedule not found' }); return; }
+
+    const date = new Date(weekStart);
+    const day = date.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    date.setDate(date.getDate() + diffToMonday);
+    date.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setDate(date.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    const existing = await prisma.schedule.findFirst({ where: { restaurantId: source.restaurantId, weekStart: date } });
     if (existing) {
       res.status(409).json({ error: 'A schedule already exists for this week and restaurant', existingId: existing.id });
       return;
@@ -441,19 +300,8 @@ router.post('/:id/duplicate', async (req, res) => {
 
     const newSchedule = await prisma.schedule.create({
       data: {
-        weekStart: date,
-        weekEnd: end,
-        restaurantId: source.restaurantId,
-        shifts: {
-          create: source.shifts.map(s => ({
-            dayOfWeek: s.dayOfWeek,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            shiftType: s.shiftType,
-            notes: s.notes,
-            employeeId: s.employeeId,
-          })),
-        },
+        weekStart: date, weekEnd: end, restaurantId: source.restaurantId,
+        shifts: { create: source.shifts.map(s => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, shiftType: s.shiftType, notes: s.notes, employeeId: s.employeeId })) },
       },
       include: { restaurant: true, shifts: { include: { employee: true } } },
     });
@@ -463,11 +311,14 @@ router.post('/:id/duplicate', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', async (req: AuthRequest, res) => {
   try {
     const { published, notes } = req.body;
+    const existing = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!existing) { res.status(404).json({ error: 'Schedule not found' }); return; }
+
     const schedule = await prisma.schedule.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: { published, notes },
       include: { restaurant: true, shifts: { include: { employee: true } } },
     });
@@ -477,9 +328,11 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: AuthRequest, res) => {
   try {
-    await prisma.schedule.delete({ where: { id: req.params.id } });
+    const existing = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!existing) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    await prisma.schedule.delete({ where: { id: req.params.id as string } });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete schedule' });
@@ -493,33 +346,21 @@ function timesOverlap(start1: string, end1: string, start2: string, end2: string
   return s1 < e2 && s2 < e1;
 }
 
-// Shift management
-router.post('/:id/shifts', async (req, res) => {
+// Shift management - verify via schedule -> restaurant -> user
+router.post('/:id/shifts', async (req: AuthRequest, res) => {
   try {
-    const { employeeId, dayOfWeek, startTime, endTime, shiftType, notes } = req.body;
+    const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
-    // Check for overlapping shifts (only for types with times)
+    const { employeeId, dayOfWeek, startTime, endTime, shiftType, notes } = req.body;
     if (shiftType === 'WORK' || shiftType === 'BREAK') {
-      const existing = await prisma.shift.findMany({
-        where: { scheduleId: req.params.id, employeeId, dayOfWeek },
-      });
-      const overlap = existing.find(s =>
-        (s.shiftType === 'WORK' || s.shiftType === 'BREAK') &&
-        timesOverlap(startTime, endTime, s.startTime, s.endTime)
-      );
-      if (overlap) {
-        res.status(409).json({ error: `Overlaps with existing shift (${overlap.startTime} - ${overlap.endTime})` });
-        return;
-      }
+      const existing = await prisma.shift.findMany({ where: { scheduleId: req.params.id as string, employeeId, dayOfWeek } });
+      const overlap = existing.find(s => (s.shiftType === 'WORK' || s.shiftType === 'BREAK') && timesOverlap(startTime, endTime, s.startTime, s.endTime));
+      if (overlap) { res.status(409).json({ error: `Overlaps with existing shift (${overlap.startTime} - ${overlap.endTime})` }); return; }
     }
 
     const shift = await prisma.shift.create({
-      data: {
-        employeeId, dayOfWeek, startTime, endTime,
-        shiftType: shiftType || 'WORK',
-        notes,
-        scheduleId: req.params.id,
-      },
+      data: { employeeId, dayOfWeek, startTime, endTime, shiftType: shiftType || 'WORK', notes, scheduleId: req.params.id as string },
       include: { employee: true },
     });
     res.status(201).json(shift);
@@ -528,43 +369,25 @@ router.post('/:id/shifts', async (req, res) => {
   }
 });
 
-// Bulk add shifts for an employee across multiple days
-router.post('/:id/shifts/bulk', async (req, res) => {
+router.post('/:id/shifts/bulk', async (req: AuthRequest, res) => {
   try {
-    const { shifts } = req.body;
+    const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
-    // Validate no overlaps with existing shifts
+    const { shifts } = req.body;
     for (const s of shifts) {
       if (s.shiftType === 'WORK' || s.shiftType === 'BREAK') {
-        const existing = await prisma.shift.findMany({
-          where: { scheduleId: req.params.id, employeeId: s.employeeId, dayOfWeek: s.dayOfWeek },
-        });
-        const overlap = existing.find(ex =>
-          (ex.shiftType === 'WORK' || ex.shiftType === 'BREAK') &&
-          timesOverlap(s.startTime, s.endTime, ex.startTime, ex.endTime)
-        );
-        if (overlap) {
-          res.status(409).json({ error: `Shift ${s.startTime}-${s.endTime} overlaps with existing (${overlap.startTime}-${overlap.endTime})` });
-          return;
-        }
+        const existing = await prisma.shift.findMany({ where: { scheduleId: req.params.id as string, employeeId: s.employeeId, dayOfWeek: s.dayOfWeek } });
+        const overlap = existing.find(ex => (ex.shiftType === 'WORK' || ex.shiftType === 'BREAK') && timesOverlap(s.startTime, s.endTime, ex.startTime, ex.endTime));
+        if (overlap) { res.status(409).json({ error: `Shift ${s.startTime}-${s.endTime} overlaps with existing (${overlap.startTime}-${overlap.endTime})` }); return; }
       }
     }
 
     const created = await Promise.all(
-      shifts.map((s: any) =>
-        prisma.shift.create({
-          data: {
-            employeeId: s.employeeId,
-            dayOfWeek: s.dayOfWeek,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            shiftType: s.shiftType || 'WORK',
-            notes: s.notes,
-            scheduleId: req.params.id,
-          },
-          include: { employee: true },
-        })
-      )
+      shifts.map((s: any) => prisma.shift.create({
+        data: { employeeId: s.employeeId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, shiftType: s.shiftType || 'WORK', notes: s.notes, scheduleId: req.params.id as string },
+        include: { employee: true },
+      }))
     );
     res.status(201).json(created);
   } catch (error) {
@@ -572,35 +395,24 @@ router.post('/:id/shifts/bulk', async (req, res) => {
   }
 });
 
-router.put('/shifts/:shiftId', async (req, res) => {
+router.put('/shifts/:shiftId', async (req: AuthRequest, res) => {
   try {
     const { dayOfWeek, startTime, endTime, shiftType, notes } = req.body;
+    const current = await prisma.shift.findFirst({
+      where: { id: req.params.shiftId as string, schedule: { restaurant: { userId: req.userId! } } },
+    });
+    if (!current) { res.status(404).json({ error: 'Shift not found' }); return; }
 
-    // Check overlap (exclude current shift)
     if ((shiftType === 'WORK' || shiftType === 'BREAK') && startTime && endTime) {
-      const current = await prisma.shift.findUnique({ where: { id: req.params.shiftId } });
-      if (current) {
-        const existing = await prisma.shift.findMany({
-          where: {
-            scheduleId: current.scheduleId,
-            employeeId: current.employeeId,
-            dayOfWeek: dayOfWeek ?? current.dayOfWeek,
-            id: { not: req.params.shiftId },
-          },
-        });
-        const overlap = existing.find(s =>
-          (s.shiftType === 'WORK' || s.shiftType === 'BREAK') &&
-          timesOverlap(startTime, endTime, s.startTime, s.endTime)
-        );
-        if (overlap) {
-          res.status(409).json({ error: `Overlaps with existing shift (${overlap.startTime} - ${overlap.endTime})` });
-          return;
-        }
-      }
+      const existing = await prisma.shift.findMany({
+        where: { scheduleId: current.scheduleId, employeeId: current.employeeId, dayOfWeek: dayOfWeek ?? current.dayOfWeek, id: { not: req.params.shiftId as string } },
+      });
+      const overlap = existing.find(s => (s.shiftType === 'WORK' || s.shiftType === 'BREAK') && timesOverlap(startTime, endTime, s.startTime, s.endTime));
+      if (overlap) { res.status(409).json({ error: `Overlaps with existing shift (${overlap.startTime} - ${overlap.endTime})` }); return; }
     }
 
     const shift = await prisma.shift.update({
-      where: { id: req.params.shiftId },
+      where: { id: req.params.shiftId as string },
       data: { dayOfWeek, startTime, endTime, shiftType, notes },
       include: { employee: true },
     });
@@ -610,9 +422,13 @@ router.put('/shifts/:shiftId', async (req, res) => {
   }
 });
 
-router.delete('/shifts/:shiftId', async (req, res) => {
+router.delete('/shifts/:shiftId', async (req: AuthRequest, res) => {
   try {
-    await prisma.shift.delete({ where: { id: req.params.shiftId } });
+    const shift = await prisma.shift.findFirst({
+      where: { id: req.params.shiftId as string, schedule: { restaurant: { userId: req.userId! } } },
+    });
+    if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+    await prisma.shift.delete({ where: { id: req.params.shiftId as string } });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete shift' });

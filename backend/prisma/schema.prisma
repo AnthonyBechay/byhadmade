@@ -8,24 +8,33 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String       @id @default(cuid())
+  email        String       @unique
+  password     String
+  name         String
+  categories   Category[]
+  ingredients  Ingredient[]
+  recipes      Recipe[]
+  menus        Menu[]
+  restaurants  Restaurant[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
 
 // ─── Recipe Management ───
 
 model Category {
   id            String        @id @default(cuid())
-  name          String        @unique
+  name          String
   description   String?
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   subcategories Subcategory[]
   recipes       Recipe[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+
+  @@unique([name, userId])
 }
 
 model Subcategory {
@@ -43,12 +52,16 @@ model Subcategory {
 
 model Ingredient {
   id               String             @id @default(cuid())
-  name             String             @unique
+  name             String
   unit             String?
   category         String?
+  userId           String
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   recipeIngredients RecipeIngredient[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+
+  @@unique([name, userId])
 }
 
 model Recipe {
@@ -61,6 +74,8 @@ model Recipe {
   servings        Int?
   difficulty      Difficulty         @default(MEDIUM)
   imageUrl        String?
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   categoryId      String?
   category        Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   subcategoryId   String?
@@ -97,6 +112,8 @@ model Menu {
   name        String
   description String?
   isActive    Boolean    @default(true)
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   items       MenuItem[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -124,6 +141,8 @@ model Restaurant {
   logoUrl    String?
   details    String?
   shareToken String     @unique @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   employees  Employee[]
   schedules  Schedule[]
   createdAt  DateTime   @default(now())

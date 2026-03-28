@@ -16,6 +16,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);

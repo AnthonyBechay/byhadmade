@@ -5,8 +5,17 @@ services:
       dockerfile: backend/Dockerfile
     restart: always
     environment:
+      # === REQUIRED: Fill these in ===
+      # PostgreSQL connection string
+      # Format: postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+      # If using Coolify's built-in Postgres, Coolify auto-injects this
       - DATABASE_URL=${DATABASE_URL}
+
+      # Secret key for signing JWT tokens (use a long random string)
+      # Generate one: openssl rand -base64 32
       - JWT_SECRET=${JWT_SECRET}
+
+      # === Pre-configured (usually no changes needed) ===
       - PORT=3001
       - NODE_ENV=production
     volumes:

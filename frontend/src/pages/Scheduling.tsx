@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, CalendarDays, Users, Building2, Trash2, Edit3, Copy, X, Check } from 'lucide-react';
+import { Plus, CalendarDays, Users, Building2, Trash2, Edit3, Copy, X, Check, Upload } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './Scheduling.css';
@@ -25,6 +25,8 @@ export default function Scheduling() {
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [editingRest, setEditingRest] = useState<Restaurant | null>(null);
   const [restForm, setRestForm] = useState({ name: '', address: '', phone: '', logoUrl: '', details: '' });
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [empForm, setEmpForm] = useState({ name: '', role: '', phone: '', email: '', color: COLORS[0], hourlyRate: '', restaurantId: '' });
   const [schedForm, setSchedForm] = useState({ weekStart: '', restaurantId: '' });
   const [schedError, setSchedError] = useState('');
@@ -41,14 +43,20 @@ export default function Scheduling() {
 
   const handleCreateRestaurant = async (e: React.FormEvent) => {
     e.preventDefault();
+    let rest;
     if (editingRest) {
-      await api.put(`/restaurants/${editingRest.id}`, restForm);
+      rest = await api.put(`/restaurants/${editingRest.id}`, restForm);
     } else {
-      await api.post('/restaurants', restForm);
+      rest = await api.post('/restaurants', restForm);
+    }
+    if (logoFile && rest?.id) {
+      await api.upload(`/restaurants/${rest.id}/upload-logo`, logoFile);
     }
     setShowRestModal(false);
     setEditingRest(null);
     setRestForm({ name: '', address: '', phone: '', logoUrl: '', details: '' });
+    setLogoFile(null);
+    setLogoPreview(null);
     load();
   };
 
@@ -61,6 +69,8 @@ export default function Scheduling() {
       logoUrl: rest.logoUrl || '',
       details: rest.details || '',
     });
+    setLogoFile(null);
+    setLogoPreview(rest.logoUrl || null);
     setShowRestModal(true);
   };
 
@@ -305,8 +315,27 @@ export default function Scheduling() {
             <input className="input" value={restForm.phone} onChange={e => setRestForm({ ...restForm, phone: e.target.value })} placeholder="+1 555 123 4567" />
           </div>
           <div className="form-group">
-            <label className="label">Logo URL</label>
-            <input className="input" value={restForm.logoUrl} onChange={e => setRestForm({ ...restForm, logoUrl: e.target.value })} placeholder="https://example.com/logo.png" />
+            <label className="label">Logo</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {(logoPreview || restForm.logoUrl) && (
+                <img src={logoFile ? logoPreview! : restForm.logoUrl} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--color-border)' }} />
+              )}
+              <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer', margin: 0 }}>
+                <Upload size={14} /> {logoPreview || restForm.logoUrl ? 'Change' : 'Upload'}
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setLogoFile(file);
+                    setLogoPreview(URL.createObjectURL(file));
+                  }
+                }} />
+              </label>
+              {(logoPreview || restForm.logoUrl) && (
+                <button type="button" className="btn-icon" onClick={() => { setLogoFile(null); setLogoPreview(null); setRestForm({ ...restForm, logoUrl: '' }); }} title="Remove logo">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
           <div className="form-group">
             <label className="label">Details / Notes</label>

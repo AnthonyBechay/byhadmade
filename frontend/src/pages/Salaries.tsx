@@ -40,7 +40,7 @@ export default function Salaries() {
   const navigate = useNavigate();
   const [report, setReport] = useState<SalaryReport | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [restaurant, setRestaurant] = useState<{ name: string } | null>(null);
+  const [restaurant, setRestaurant] = useState<{ name: string; logoUrl?: string | null; address?: string | null; phone?: string | null; details?: string | null } | null>(null);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [showConfig, setShowConfig] = useState(false);
@@ -59,7 +59,7 @@ export default function Salaries() {
   useEffect(() => {
     api.get('/restaurants').then((rests: any[]) => {
       const r = rests.find((r: any) => r.id === restaurantId);
-      if (r) setRestaurant({ name: r.name });
+      if (r) setRestaurant({ name: r.name, logoUrl: r.logoUrl, address: r.address, phone: r.phone, details: r.details });
     });
     loadEmployees();
   }, [restaurantId]);
@@ -93,33 +93,129 @@ export default function Salaries() {
     downloadCSV(csv, `salaries_${restaurant?.name || 'report'}_${MONTHS[month - 1]}_${year}.csv`);
   };
 
-  const exportEmployeeCSV = (empId: string, emp: SalaryEmployee) => {
+  const exportEmployeeSalary = (_empId: string, emp: SalaryEmployee) => {
     if (!report) return;
     const weeks = Object.keys(emp.weeklyBreakdown).sort();
-    const rows = [
-      ['Employee', emp.name],
-      ['Role', emp.role || ''],
-      ['Hourly Rate', emp.hourlyRate?.toString() || 'N/A'],
-      ['Month', `${MONTHS[month - 1]} ${year}`],
-      ['Restaurant', restaurant?.name || ''],
-      [],
-      ['Week', 'Work Hours', 'Break Hours', 'Shifts', 'Pay'],
-      ...weeks.map(week => {
+    const logoUrl = restaurant?.logoUrl ? `${window.location.origin}${restaurant.logoUrl}` : '';
+    const monthYear = `${MONTHS[month - 1]} ${year}`;
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Salary - ${emp.name} - ${monthYear}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #1a1a17; background: #fff; padding: 40px; max-width: 800px; margin: 0 auto; }
+  .header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; padding-bottom: 16px; border-bottom: 2px solid #c8956c; }
+  .header img { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; }
+  .header-placeholder { width: 56px; height: 56px; border-radius: 12px; background: #c8956c; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 24px; }
+  .header h1 { font-size: 22px; font-weight: 700; }
+  .header-details { font-size: 12px; color: #706a60; margin-top: 2px; }
+  .meta { display: flex; justify-content: space-between; margin: 20px 0; padding: 16px; background: #f8f6f3; border-radius: 10px; }
+  .meta-item { text-align: center; }
+  .meta-label { font-size: 11px; color: #706a60; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .meta-value { font-size: 18px; font-weight: 700; }
+  .meta-value.accent { color: #c8956c; }
+  .meta-value.green { color: #4a9e6a; }
+  .section-title { font-size: 14px; font-weight: 600; color: #706a60; text-transform: uppercase; letter-spacing: 0.05em; margin: 28px 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; background: #f8f6f3; font-weight: 600; font-size: 11px; text-transform: uppercase; color: #706a60; letter-spacing: 0.05em; border-bottom: 1px solid #e0dcd6; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f0ece6; }
+  tr:last-child td { border-bottom: none; }
+  .total-row td { font-weight: 700; background: #f8f6f3; border-top: 2px solid #c8956c; }
+  .amount { text-align: right; }
+  .hours { color: #c8956c; font-weight: 600; }
+  .pay { color: #4a9e6a; font-weight: 600; }
+  .summary-box { margin-top: 24px; padding: 20px; background: linear-gradient(135deg, #faf7f4, #f4f0eb); border: 1px solid #e8e2da; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .summary-label { font-size: 14px; color: #706a60; }
+  .summary-total { font-size: 32px; font-weight: 700; color: #4a9e6a; }
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e0dcd6; font-size: 11px; color: #a09a90; text-align: center; }
+  @media print { body { padding: 20px; } @page { margin: 1cm; } }
+</style></head><body>
+  <div class="header">
+    ${logoUrl ? `<img src="${logoUrl}" alt="">` : `<div class="header-placeholder">${(restaurant?.name || 'R').charAt(0)}</div>`}
+    <div>
+      <h1>${restaurant?.name || 'Restaurant'}</h1>
+      <div class="header-details">
+        ${[restaurant?.address, restaurant?.phone].filter(Boolean).join(' &bull; ')}
+        ${restaurant?.details ? `<br>${restaurant.details}` : ''}
+      </div>
+    </div>
+  </div>
+
+  <h2 style="margin-top: 20px; font-size: 16px; font-weight: 600;">Salary Report - ${emp.name}</h2>
+  ${emp.role ? `<div style="font-size: 13px; color: #706a60; margin-top: 2px;">${emp.role}</div>` : ''}
+
+  <div class="meta">
+    <div class="meta-item">
+      <div class="meta-label">Period</div>
+      <div class="meta-value">${monthYear}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Hourly Rate</div>
+      <div class="meta-value accent">${emp.hourlyRate != null ? `$${emp.hourlyRate}/hr` : 'N/A'}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Total Hours</div>
+      <div class="meta-value accent">${emp.totalWorkHours.toFixed(1)}h</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Total Shifts</div>
+      <div class="meta-value">${emp.totalShifts}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Net Salary</div>
+      <div class="meta-value green">${emp.salary != null ? `$${emp.salary.toFixed(2)}` : 'N/A'}</div>
+    </div>
+  </div>
+
+  <div class="section-title">Weekly Breakdown</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Week</th>
+        <th>Work Hours</th>
+        <th>Break Hours</th>
+        <th>Shifts</th>
+        <th class="amount">Pay</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${weeks.map(week => {
         const w = emp.weeklyBreakdown[week];
         const weekDate = new Date(week);
-        return [
-          `Week of ${weekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-          w.workHours.toFixed(1),
-          w.breakHours.toFixed(1),
-          w.shifts.toString(),
-          emp.hourlyRate ? (w.workHours * emp.hourlyRate).toFixed(2) : 'N/A',
-        ];
-      }),
-      [],
-      ['TOTAL', emp.totalWorkHours.toFixed(1), emp.totalBreakHours.toFixed(1), emp.totalShifts.toString(), emp.salary != null ? emp.salary.toFixed(2) : 'N/A'],
-    ];
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    downloadCSV(csv, `salary_${emp.name.replace(/\s+/g, '_')}_${MONTHS[month - 1]}_${year}.csv`);
+        const pay = emp.hourlyRate ? (w.workHours * emp.hourlyRate) : null;
+        return `<tr>
+          <td>Week of ${weekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+          <td class="hours">${w.workHours.toFixed(1)}h</td>
+          <td>${w.breakHours.toFixed(1)}h</td>
+          <td>${w.shifts}</td>
+          <td class="amount pay">${pay != null ? `$${pay.toFixed(2)}` : 'N/A'}</td>
+        </tr>`;
+      }).join('')}
+      <tr class="total-row">
+        <td>Total</td>
+        <td class="hours">${emp.totalWorkHours.toFixed(1)}h</td>
+        <td>${emp.totalBreakHours.toFixed(1)}h</td>
+        <td>${emp.totalShifts}</td>
+        <td class="amount pay">${emp.salary != null ? `$${emp.salary.toFixed(2)}` : 'N/A'}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="summary-box">
+    <div class="summary-label">Total Salary for ${monthYear}</div>
+    <div class="summary-total">${emp.salary != null ? `$${emp.salary.toFixed(2)}` : 'N/A'}</div>
+  </div>
+
+  <div class="footer">
+    Generated on ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} &bull; ${restaurant?.name || ''} &bull; ByHadMade
+  </div>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    }
   };
 
   const downloadCSV = (csv: string, filename: string) => {
@@ -212,7 +308,7 @@ export default function Salaries() {
                 <span>{emp.totalShifts}</span>
                 <span>{emp.totalBreakHours.toFixed(1)}h</span>
                 <span className="sal-salary">{emp.salary != null ? `$${emp.salary.toFixed(2)}` : '-'}</span>
-                <span><button className="btn-icon" title="Export employee report" onClick={() => exportEmployeeCSV(empId, emp)}><Download size={14} /></button></span>
+                <span><button className="btn-icon" title="Export employee report" onClick={() => exportEmployeeSalary(empId, emp)}><Download size={14} /></button></span>
               </div>
             ))}
             <div className="salary-table-row salary-table-footer">

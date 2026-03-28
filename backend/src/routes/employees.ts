@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
 
 router.use(authenticate);
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: AuthRequest, res) => {
   try {
     const { restaurantId, active } = req.query;
-    const where: any = {};
+    const where: any = { restaurant: { userId: req.userId! } };
     if (restaurantId) where.restaurantId = restaurantId as string;
     if (active !== undefined) where.isActive = active === 'true';
 
@@ -25,10 +25,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: AuthRequest, res) => {
   try {
-    const employee = await prisma.employee.findUnique({
-      where: { id: req.params.id },
+    const employee = await prisma.employee.findFirst({
+      where: { id: req.params.id as string, restaurant: { userId: req.userId! } },
       include: { restaurant: true, shifts: { include: { schedule: true }, orderBy: { createdAt: 'desc' }, take: 50 } },
     });
     if (!employee) {
@@ -41,9 +41,13 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   try {
     const { name, role, phone, email, color, hourlyRate, restaurantId } = req.body;
+    // Verify restaurant belongs to user
+    const rest = await prisma.restaurant.findFirst({ where: { id: restaurantId, userId: req.userId! } });
+    if (!rest) { res.status(404).json({ error: 'Restaurant not found' }); return; }
+
     const employee = await prisma.employee.create({
       data: { name, role, phone, email, color, hourlyRate, restaurantId },
       include: { restaurant: true },
@@ -54,11 +58,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', async (req: AuthRequest, res) => {
   try {
     const { name, role, phone, email, color, hourlyRate, isActive } = req.body;
+    // Verify ownership
+    const emp = await prisma.employee.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
+
     const employee = await prisma.employee.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       data: { name, role, phone, email, color, hourlyRate, isActive },
       include: { restaurant: true },
     });
@@ -68,9 +76,11 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: AuthRequest, res) => {
   try {
-    await prisma.employee.delete({ where: { id: req.params.id } });
+    const emp = await prisma.employee.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
+    await prisma.employee.delete({ where: { id: req.params.id as string } });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete employee' });
