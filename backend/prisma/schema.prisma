@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Recipe Management ───
+
+model Category {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  description   String?
+  subcategories Subcategory[]
+  recipes       Recipe[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Subcategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  recipes     Recipe[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, categoryId])
+}
+
+model Ingredient {
+  id               String             @id @default(cuid())
+  name             String             @unique
+  unit             String?
+  category         String?
+  recipeIngredients RecipeIngredient[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+model Recipe {
+  id              String             @id @default(cuid())
+  title           String
+  description     String?
+  instructions    String?
+  prepTime        Int?
+  cookTime        Int?
+  servings        Int?
+  difficulty      Difficulty         @default(MEDIUM)
+  imageUrl        String?
+  categoryId      String?
+  category        Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId   String?
+  subcategory     Subcategory?       @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  ingredients     RecipeIngredient[]
+  menuItems       MenuItem[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model RecipeIngredient {
+  id           String     @id @default(cuid())
+  quantity     Float
+  unit         String?
+  notes        String?
+  recipeId     String
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, ingredientId])
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// ─── Menu Management ───
+
+model Menu {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean    @default(true)
+  items       MenuItem[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model MenuItem {
+  id       String  @id @default(cuid())
+  price    Float?
+  notes    String?
+  section  String?
+  sortOrder Int    @default(0)
+  menuId   String
+  menu     Menu    @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  recipeId String
+  recipe   Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+}
+
+// ─── Employee Scheduling ───
+
+model Restaurant {
+  id        String     @id @default(cuid())
+  name      String
+  employees Employee[]
+  schedules Schedule[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Employee {
+  id           String     @id @default(cuid())
+  name         String
+  role         String?
+  phone        String?
+  email        String?
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  shifts       Shift[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Schedule {
+  id           String     @id @default(cuid())
+  weekStart    DateTime
+  weekEnd      DateTime
+  published    Boolean    @default(false)
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  shifts       Shift[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([weekStart, restaurantId])
+}
+
+model Shift {
+  id         String   @id @default(cuid())
+  dayOfWeek  Int
+  startTime  String
+  endTime    String
+  isBreak    Boolean  @default(false)
+  notes      String?
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  scheduleId String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
