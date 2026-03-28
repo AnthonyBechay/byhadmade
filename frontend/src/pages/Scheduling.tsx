@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, CalendarDays, Users, Building2, Trash2, Edit3, Copy, X, Check, Upload } from 'lucide-react';
+import { Plus, CalendarDays, Users, Building2, Trash2, Edit3, Copy, X, Check, Upload, DollarSign } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './Scheduling.css';
@@ -285,8 +285,9 @@ export default function Scheduling() {
                     <strong style={{ fontSize: 16 }}>{rest.name}</strong>
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button className="btn-icon" onClick={() => openEditRest(rest)}><Edit3 size={14} /></button>
-                    <button className="btn-icon" onClick={async () => { if (confirm('Delete restaurant and all its employees?')) { await api.delete(`/restaurants/${rest.id}`); load(); } }}><Trash2 size={14} /></button>
+                    <button className="btn-icon" title="Salaries" onClick={() => navigate(`/app/scheduling/salaries/${rest.id}`)}><DollarSign size={14} /></button>
+                    <button className="btn-icon" title="Edit" onClick={() => openEditRest(rest)}><Edit3 size={14} /></button>
+                    <button className="btn-icon" title="Delete" onClick={async () => { if (confirm('Delete restaurant and all its employees?')) { await api.delete(`/restaurants/${rest.id}`); load(); } }}><Trash2 size={14} /></button>
                   </div>
                 </div>
                 {rest.address && <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>{rest.address}</div>}

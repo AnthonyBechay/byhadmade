@@ -508,3 +508,104 @@
     width: calc(100vw - 32px);
   }
 }
+
+/* Print styles - shows only the schedule grid */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body {
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+  }
+  /* Hide the entire app shell (sidebar, nav, etc.) */
+  .sidebar,
+  .sidebar-nav,
+  .sidebar-header,
+  .sidebar-footer {
+    display: none !important;
+  }
+  .layout {
+    display: block !important;
+  }
+  .main-content {
+    margin: 0 !important;
+    padding: 10px !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+  /* Hide non-schedule elements */
+  .btn,
+  .page-header > div:last-child,
+  .quick-add-overlay,
+  .shift-delete {
+    display: none !important;
+  }
+  /* Keep back button area hidden but show header info */
+  .btn.btn-ghost {
+    display: none !important;
+  }
+  .page-header {
+    display: block !important;
+    margin-bottom: 16px;
+  }
+  .page-header > div:first-child {
+    display: block !important;
+  }
+  .page-title {
+    color: #000 !important;
+    font-size: 22px !important;
+  }
+  .page-subtitle {
+    color: #444 !important;
+  }
+  /* Schedule grid print styles */
+  .schedule-grid-wrapper {
+    overflow: visible !important;
+    padding-bottom: 0;
+  }
+  .schedule-grid {
+    min-width: 0 !important;
+    border-color: #ccc !important;
+  }
+  .schedule-header {
+    background: #f0f0f0 !important;
+    border-color: #ccc !important;
+  }
+  .schedule-name-cell {
+    background: #f8f8f8 !important;
+    color: #000 !important;
+  }
+  .schedule-name-cell strong {
+    color: #000 !important;
+  }
+  .schedule-role {
+    color: #555 !important;
+  }
+  .day-name {
+    color: #333 !important;
+  }
+  .day-date {
+    color: #666 !important;
+  }
+  .schedule-cell {
+    border-color: #ccc !important;
+  }
+  .schedule-row {
+    border-color: #ccc !important;
+  }
+  .schedule-day-cell {
+    cursor: default !important;
+  }
+  .shift-block {
+    border-color: #ccc !important;
+  }
+  .shift-time {
+    color: #000 !important;
+  }
+  .shift-notes {
+    color: #555 !important;
+  }
+}

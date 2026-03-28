@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Clock, Coffee, Sun, Thermometer, Umbrella } from 'lucide-react';
+import { Clock, Coffee, Sun, Thermometer, Umbrella, Printer } from 'lucide-react';
 import './PublicSchedule.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -73,11 +73,15 @@ export default function PublicSchedule() {
   return (
     <div className="public-schedule">
       <div className="public-schedule-header">
-        <img src="/logo.png" alt="ByHadMade" className="public-logo" />
-        <div>
+        <img src={restaurant.logoUrl || '/logo.png'} alt={restaurant.name} className="public-logo" />
+        <div style={{ flex: 1 }}>
           <h1>{restaurant.name}</h1>
           <p>Weekly Schedule &middot; {formatDate(weekStart)} - {formatDate(weekEnd)}</p>
         </div>
+        <button className="btn-print" onClick={() => window.print()} title="Print Schedule">
+          <Printer size={18} />
+          <span>Print</span>
+        </button>
       </div>
 
       {!schedule ? (

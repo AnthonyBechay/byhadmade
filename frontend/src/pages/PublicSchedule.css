@@ -193,6 +193,26 @@
   margin-top: 1px;
 }
 
+.btn-print {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.btn-print:hover {
+  background: var(--color-surface-hover, rgba(255,255,255,0.06));
+  border-color: var(--color-primary);
+}
+
 .public-footer {
   text-align: center;
   padding: 30px;
@@ -267,5 +287,89 @@
   }
   .pub-emp-indicator {
     display: none;
+  }
+  .btn-print span {
+    display: none;
+  }
+  .btn-print {
+    padding: 8px;
+  }
+}
+
+/* Print styles */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body {
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+  }
+  .public-schedule {
+    padding: 0;
+    max-width: none;
+    min-height: auto;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .btn-print {
+    display: none !important;
+  }
+  .public-schedule-header h1 {
+    color: #000 !important;
+  }
+  .public-schedule-header p {
+    color: #444 !important;
+  }
+  .public-grid-wrapper {
+    overflow: visible;
+    padding-bottom: 0;
+  }
+  .public-grid {
+    min-width: 0;
+    border-color: #ccc;
+  }
+  .public-grid-header {
+    background: #f0f0f0 !important;
+  }
+  .public-name-cell {
+    background: #f8f8f8 !important;
+    color: #000 !important;
+  }
+  .public-name-cell strong {
+    color: #000 !important;
+  }
+  .pub-role {
+    color: #555 !important;
+  }
+  .pub-day-name {
+    color: #333 !important;
+  }
+  .pub-day-date {
+    color: #666 !important;
+  }
+  .pub-shift {
+    border-color: #ccc !important;
+  }
+  .pub-shift-time {
+    color: #000 !important;
+  }
+  .pub-shift-notes {
+    color: #555 !important;
+  }
+  .public-cell {
+    border-color: #ccc !important;
+  }
+  .public-grid-header {
+    border-color: #ccc !important;
+  }
+  .public-grid-row {
+    border-color: #ccc !important;
+  }
+  .public-footer {
+    color: #888 !important;
+    padding: 15px;
   }
 }
