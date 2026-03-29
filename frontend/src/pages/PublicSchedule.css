@@ -193,6 +193,57 @@
   margin-top: 1px;
 }
 
+.pub-shift-break {
+  font-size: 9px;
+  color: var(--color-text-muted);
+  background: rgba(106, 159, 212, 0.1);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-top: 1px;
+  display: inline-block;
+}
+
+/* Week switcher */
+.pub-week-switcher {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.pub-week-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.pub-week-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+.pub-week-btn.active {
+  background: rgba(200, 149, 108, 0.1);
+  border-color: var(--color-primary);
+  color: var(--color-text);
+  font-weight: 600;
+}
+.pub-week-dates {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+.pub-week-btn.active .pub-week-dates {
+  color: var(--color-text-secondary);
+}
+
 .btn-print {
   display: flex;
   align-items: center;
@@ -228,6 +279,18 @@
   .public-schedule-header {
     gap: 10px;
     margin-bottom: 20px;
+  }
+  .pub-week-switcher {
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .pub-week-btn {
+    padding: 10px 8px;
+    font-size: 12px;
+    gap: 4px;
+  }
+  .pub-week-dates {
+    font-size: 10px;
   }
   .public-schedule-header h1 {
     font-size: 20px;
@@ -317,6 +380,9 @@
     color: #000 !important;
   }
   .btn-print {
+    display: none !important;
+  }
+  .pub-week-switcher {
     display: none !important;
   }
   /* Header */

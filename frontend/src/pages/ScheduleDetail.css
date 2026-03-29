@@ -13,14 +13,14 @@
 
 .schedule-header {
   display: grid;
-  grid-template-columns: 160px repeat(7, 1fr);
+  grid-template-columns: 200px repeat(7, 1fr) 70px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
 }
 
 .schedule-row {
   display: grid;
-  grid-template-columns: 160px repeat(7, 1fr);
+  grid-template-columns: 200px repeat(7, 1fr) 70px;
   border-bottom: 1px solid var(--color-border);
 }
 .schedule-row:last-child {
@@ -177,6 +177,84 @@
 .shift-delete:hover {
   color: var(--color-danger);
   background: rgba(224, 85, 85, 0.1);
+}
+
+/* Break tag on shift */
+.shift-break-tag {
+  font-size: 9px;
+  color: var(--color-text-muted);
+  background: rgba(106, 159, 212, 0.1);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-top: 1px;
+  display: inline-block;
+}
+
+/* Employee row actions (order + delete) */
+.emp-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition);
+  flex-shrink: 0;
+}
+.schedule-name-cell:hover .emp-row-actions {
+  opacity: 1;
+}
+.emp-order-btn,
+.emp-delete-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.emp-order-btn:hover {
+  color: var(--color-primary);
+  background: rgba(200, 149, 108, 0.1);
+}
+.emp-order-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.emp-delete-btn:hover {
+  color: var(--color-danger);
+  background: rgba(224, 85, 85, 0.1);
+}
+
+/* Total column + row */
+.schedule-total-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.05em;
+}
+.schedule-total-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary-light, var(--color-primary));
+}
+.schedule-totals-row {
+  background: var(--color-surface);
+}
+.schedule-totals-label {
+  font-size: 12px;
+}
+.schedule-grand-total {
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 /* Quick add popover */
@@ -418,13 +496,16 @@
   }
   .schedule-header,
   .schedule-row {
-    grid-template-columns: 120px repeat(7, 1fr);
+    grid-template-columns: 140px repeat(7, 1fr) 55px;
   }
   .schedule-name-cell {
     position: sticky;
     left: 0;
     z-index: 2;
     padding: 8px;
+  }
+  .emp-row-actions {
+    opacity: 1;
   }
   .schedule-name-cell strong {
     font-size: 12px;
@@ -491,11 +572,11 @@
 
 @media (max-width: 480px) {
   .schedule-grid {
-    min-width: 600px;
+    min-width: 650px;
   }
   .schedule-header,
   .schedule-row {
-    grid-template-columns: 90px repeat(7, 1fr);
+    grid-template-columns: 90px repeat(7, 1fr) 50px;
   }
   .emp-indicator {
     display: none;
@@ -503,6 +584,9 @@
   .schedule-name-cell {
     padding: 6px;
     font-size: 12px;
+  }
+  .emp-row-actions {
+    opacity: 1;
   }
   .quick-add-popover {
     width: calc(100vw - 32px);
@@ -654,5 +738,25 @@
   /* Day header */
   .schedule-day-header {
     color: #000 !important;
+  }
+  /* Totals */
+  .schedule-total-cell {
+    color: #000 !important;
+    font-weight: 600 !important;
+  }
+  .schedule-totals-row {
+    background: #f0f0f0 !important;
+    border-top: 2px solid #aaa !important;
+  }
+  .schedule-grand-total {
+    font-weight: 700 !important;
+  }
+  /* Hide row actions in print */
+  .emp-row-actions {
+    display: none !important;
+  }
+  .shift-break-tag {
+    color: #555 !important;
+    background: #e8e8e8 !important;
   }
 }

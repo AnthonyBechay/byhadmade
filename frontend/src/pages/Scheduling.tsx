@@ -169,6 +169,12 @@ export default function Scheduling() {
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const formatDateFull = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const weekEndFromStart = (weekStart: string) => {
+    const start = new Date(weekStart);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return end;
+  };
 
   const getUniqueEmployees = (shifts: any[]) => {
     const ids = new Set(shifts.map(s => s.employee?.id));
@@ -220,7 +226,7 @@ export default function Scheduling() {
             {schedules.map(sched => (
               <div key={sched.id} className="schedule-list-item" onClick={() => navigate(`/app/scheduling/${sched.id}`)}>
                 <div className="schedule-list-dates">
-                  <span className="schedule-list-range">{formatDate(sched.weekStart)} - {formatDate(sched.weekEnd)}</span>
+                  <span className="schedule-list-range">{formatDate(sched.weekStart)} - {formatDate(weekEndFromStart(sched.weekStart).toISOString())}</span>
                   <span className="schedule-list-year">{new Date(sched.weekStart).getFullYear()}</span>
                 </div>
                 <div className="schedule-list-info">
@@ -459,7 +465,7 @@ export default function Scheduling() {
                   .slice(0, 5)
                   .map(s => (
                     <option key={s.id} value={s.id}>
-                      {formatDate(s.weekStart)} - {formatDate(s.weekEnd)} ({s.shifts.filter((sh: any) => sh.shiftType === 'WORK').length} work shifts, {s.published ? 'Published' : 'Draft'})
+                      {formatDate(s.weekStart)} - {formatDate(weekEndFromStart(s.weekStart).toISOString())} ({s.shifts.filter((sh: any) => sh.shiftType === 'WORK').length} work shifts, {s.published ? 'Published' : 'Draft'})
                     </option>
                   ))}
               </select>

@@ -150,19 +150,20 @@ model Restaurant {
 }
 
 model Employee {
-  id           String     @id @default(cuid())
-  name         String
-  role         String?
-  phone        String?
-  email        String?
-  color        String?
-  isActive     Boolean    @default(true)
-  hourlyRate   Float?
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  shifts       Shift[]
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id             String                  @id @default(cuid())
+  name           String
+  role           String?
+  phone          String?
+  email          String?
+  color          String?
+  isActive       Boolean                 @default(true)
+  hourlyRate     Float?
+  restaurantId   String
+  restaurant     Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  shifts         Shift[]
+  scheduleOrders ScheduleEmployeeOrder[]
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 }
 
 model Schedule {
@@ -172,27 +173,40 @@ model Schedule {
   notes        String?
   published    Boolean    @default(false)
   restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  shifts       Shift[]
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  restaurant     Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  shifts         Shift[]
+  employeeOrders ScheduleEmployeeOrder[]
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   @@unique([weekStart, restaurantId])
 }
 
 model Shift {
-  id         String     @id @default(cuid())
-  dayOfWeek  Int
-  startTime  String
-  endTime    String
-  shiftType  ShiftType  @default(WORK)
-  notes      String?
-  employeeId String
-  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  scheduleId String
-  schedule   Schedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id            String     @id @default(cuid())
+  dayOfWeek     Int
+  startTime     String
+  endTime       String
+  shiftType     ShiftType  @default(WORK)
+  breakMinutes  Int        @default(0)
+  notes         String?
+  employeeId    String
+  employee      Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  scheduleId    String
+  schedule      Schedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+model ScheduleEmployeeOrder {
+  id           String   @id @default(cuid())
+  scheduleId   String
+  schedule     Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  displayOrder Int      @default(0)
+
+  @@unique([scheduleId, employeeId])
 }
 
 enum ShiftType {

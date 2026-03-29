@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, BarChart3, Sun, Umbrella, Thermometer, Edit3, Share2, Copy, Scissors, Printer } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, BarChart3, Sun, Umbrella, Thermometer, Edit3, Share2, Copy, Scissors, Printer, ChevronUp, ChevronDown } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './ScheduleDetail.css';
@@ -18,14 +18,30 @@ const SHIFT_TYPES = [
 ];
 
 interface Employee { id: string; name: string; role: string | null; color: string | null; hourlyRate: number | null }
-interface Shift { id: string; dayOfWeek: number; startTime: string; endTime: string; shiftType: string; notes: string | null; employee: Employee }
+interface Shift { id: string; dayOfWeek: number; startTime: string; endTime: string; shiftType: string; breakMinutes: number; notes: string | null; employee: Employee }
 interface Restaurant { id: string; name: string; shareToken?: string }
-interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; notes: string | null; restaurant: Restaurant; shifts: Shift[] }
+interface EmployeeOrder { id: string; scheduleId: string; employeeId: string; displayOrder: number }
+interface Schedule { id: string; weekStart: string; weekEnd: string; published: boolean; notes: string | null; restaurant: Restaurant; shifts: Shift[]; employeeOrders?: EmployeeOrder[] }
 interface SummaryEntry {
   name: string; role: string | null; color: string | null; hourlyRate: number | null;
   totalWorkHours: number; totalBreakHours: number; workShifts: number; daysWorked: number;
   dailyBreakdown: Record<number, { work: number; break: number }>;
   daysOff: number; sickDays: number; vacationDays: number; estimatedPay: number | null;
+}
+
+// Calculate work hours for a shift (subtract break)
+function calcWorkHours(shift: Shift): number {
+  if (shift.shiftType !== 'WORK') return 0;
+  const [startH, startM] = shift.startTime.split(':').map(Number);
+  const [endH, endM] = shift.endTime.split(':').map(Number);
+  const total = (endH + endM / 60) - (startH + startM / 60);
+  return total - (shift.breakMinutes || 0) / 60;
+}
+
+function calcShiftHours(startTime: string, endTime: string): number {
+  const [startH, startM] = startTime.split(':').map(Number);
+  const [endH, endM] = endTime.split(':').map(Number);
+  return (endH + endM / 60) - (startH + startM / 60);
 }
 
 export default function ScheduleDetail() {
@@ -44,12 +60,16 @@ export default function ScheduleDetail() {
   const [shiftError, setShiftError] = useState('');
   const [shiftForm, setShiftForm] = useState({
     employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '',
+    breakMinutes: '30',
     splitStart1: '09:00', splitEnd1: '14:00', splitStart2: '15:00', splitEnd2: '22:00',
+    splitBreak1: '30', splitBreak2: '0',
   });
 
   const DEFAULT_FORM = {
     employeeId: '', dayOfWeek: '0', startTime: '09:00', endTime: '17:00', shiftType: 'WORK', notes: '',
+    breakMinutes: '30',
     splitStart1: '09:00', splitEnd1: '14:00', splitStart2: '15:00', splitEnd2: '22:00',
+    splitBreak1: '30', splitBreak2: '0',
   };
 
   const load = () => {
@@ -69,9 +89,9 @@ export default function ScheduleDetail() {
       if (shiftForm.shiftType === 'SPLIT') {
         await api.post(`/schedules/${id}/shifts/bulk`, {
           shifts: [
-            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
-            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
-            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
+            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', breakMinutes: parseInt(shiftForm.splitBreak1) || 0, notes: shiftForm.notes || null },
+            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', breakMinutes: 0, notes: null },
+            { employeeId: shiftForm.employeeId, dayOfWeek: parseInt(shiftForm.dayOfWeek), startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', breakMinutes: parseInt(shiftForm.splitBreak2) || 0, notes: null },
           ],
         });
       } else {
@@ -81,6 +101,7 @@ export default function ScheduleDetail() {
           startTime: shiftForm.startTime,
           endTime: shiftForm.endTime,
           shiftType: shiftForm.shiftType,
+          breakMinutes: shiftForm.shiftType === 'WORK' ? (parseInt(shiftForm.breakMinutes) || 0) : 0,
           notes: shiftForm.notes || null,
         });
       }
@@ -100,9 +121,9 @@ export default function ScheduleDetail() {
       if (shiftForm.shiftType === 'SPLIT') {
         await api.post(`/schedules/${id}/shifts/bulk`, {
           shifts: [
-            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', notes: shiftForm.notes || null },
-            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', notes: null },
-            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', notes: null },
+            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart1, endTime: shiftForm.splitEnd1, shiftType: 'WORK', breakMinutes: parseInt(shiftForm.splitBreak1) || 0, notes: shiftForm.notes || null },
+            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitEnd1, endTime: shiftForm.splitStart2, shiftType: 'BREAK', breakMinutes: 0, notes: null },
+            { employeeId: quickAddEmp, dayOfWeek: quickAddDay, startTime: shiftForm.splitStart2, endTime: shiftForm.splitEnd2, shiftType: 'WORK', breakMinutes: parseInt(shiftForm.splitBreak2) || 0, notes: null },
           ],
         });
       } else {
@@ -112,6 +133,7 @@ export default function ScheduleDetail() {
           startTime: shiftForm.startTime,
           endTime: shiftForm.endTime,
           shiftType: shiftForm.shiftType,
+          breakMinutes: shiftForm.shiftType === 'WORK' ? (parseInt(shiftForm.breakMinutes) || 0) : 0,
           notes: shiftForm.notes || null,
         });
       }
@@ -133,6 +155,7 @@ export default function ScheduleDetail() {
         startTime: shiftForm.startTime,
         endTime: shiftForm.endTime,
         shiftType: shiftForm.shiftType === 'SPLIT' ? 'WORK' : shiftForm.shiftType,
+        breakMinutes: shiftForm.shiftType === 'WORK' ? (parseInt(shiftForm.breakMinutes) || 0) : 0,
         notes: shiftForm.notes || null,
       });
       setEditingShift(null);
@@ -145,6 +168,12 @@ export default function ScheduleDetail() {
 
   const handleDeleteShift = async (shiftId: string) => {
     await api.delete(`/schedules/shifts/${shiftId}`);
+    load();
+  };
+
+  const handleDeleteEmployeeShifts = async (employeeId: string) => {
+    if (!confirm('Delete all shifts for this employee in this schedule?')) return;
+    await api.delete(`/schedules/${id}/employee/${employeeId}/shifts`);
     load();
   };
 
@@ -166,6 +195,7 @@ export default function ScheduleDetail() {
       startTime: shift.startTime,
       endTime: shift.endTime,
       shiftType: shift.shiftType,
+      breakMinutes: String(shift.breakMinutes || 0),
       notes: shift.notes || '',
     });
   };
@@ -181,9 +211,47 @@ export default function ScheduleDetail() {
     setTimeout(() => setCopiedShare(false), 2000);
   };
 
+  // ─── Employee ordering ───
+  const getOrderedEmployees = () => {
+    if (!schedule) return [];
+    const orderMap: Record<string, number> = {};
+    if (schedule.employeeOrders) {
+      for (const o of schedule.employeeOrders) {
+        orderMap[o.employeeId] = o.displayOrder;
+      }
+    }
+    return Object.values(employeeShifts).sort((a, b) => {
+      const orderA = orderMap[a.employee.id] ?? 999;
+      const orderB = orderMap[b.employee.id] ?? 999;
+      return orderA - orderB;
+    });
+  };
+
+  const moveEmployee = async (employeeId: string, direction: 'up' | 'down') => {
+    const ordered = getOrderedEmployees();
+    const idx = ordered.findIndex(e => e.employee.id === employeeId);
+    if (idx === -1) return;
+    if (direction === 'up' && idx === 0) return;
+    if (direction === 'down' && idx === ordered.length - 1) return;
+
+    const newOrdered = [...ordered];
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    [newOrdered[idx], newOrdered[swapIdx]] = [newOrdered[swapIdx], newOrdered[idx]];
+
+    const orders = newOrdered.map((e, i) => ({ employeeId: e.employee.id, displayOrder: i }));
+    await api.put(`/schedules/${id}/employee-order`, { orders });
+    load();
+  };
+
   if (!schedule) return <div style={{ padding: 40, color: 'var(--color-text-muted)' }}>Loading...</div>;
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const getWeekEndDisplay = () => {
+    const start = new Date(schedule.weekStart);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return formatDate(end.toISOString());
+  };
 
   const getDateForDay = (dayIdx: number) => {
     const start = new Date(schedule.weekStart);
@@ -203,6 +271,35 @@ export default function ScheduleDetail() {
     }
     employeeShifts[shift.employee.id].shifts[shift.dayOfWeek].push(shift);
   }
+
+  const orderedEmployees = getOrderedEmployees();
+
+  // ─── Totals calculation ───
+  const getEmployeeWeekTotal = (shifts: Record<number, Shift[]>): number => {
+    let total = 0;
+    for (const dayShifts of Object.values(shifts)) {
+      for (const s of dayShifts) {
+        total += calcWorkHours(s);
+      }
+    }
+    return total;
+  };
+
+  const getDayTotal = (dayIdx: number): number => {
+    let total = 0;
+    for (const { shifts } of Object.values(employeeShifts)) {
+      for (const s of (shifts[dayIdx] || [])) {
+        total += calcWorkHours(s);
+      }
+    }
+    return total;
+  };
+
+  const getGrandTotal = (): number => {
+    let total = 0;
+    for (let d = 0; d < 7; d++) total += getDayTotal(d);
+    return total;
+  };
 
   const getShiftTypeColor = (type: string) => {
     switch (type) {
@@ -241,18 +338,34 @@ export default function ScheduleDetail() {
     </div>
   );
 
+  // Break field for WORK shifts
+  const renderBreakField = () => (
+    <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+      <label className="label">Lunch Break (minutes)</label>
+      <input className="input" type="number" min="0" step="5" value={shiftForm.breakMinutes} onChange={e => setShiftForm({ ...shiftForm, breakMinutes: e.target.value })} style={{ width: 120 }} />
+      {parseInt(shiftForm.breakMinutes) > 0 && (
+        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 8 }}>
+          ({(parseInt(shiftForm.breakMinutes) / 60).toFixed(1)}h not counted in salary)
+        </span>
+      )}
+    </div>
+  );
+
   // Time fields for WORK/BREAK
   const renderTimeFields = () => (
-    <div className="form-row" style={{ marginTop: 12 }}>
-      <div className="form-group" style={{ marginBottom: 0 }}>
-        <label className="label">Start</label>
-        <input className="input" type="time" value={shiftForm.startTime} onChange={e => setShiftForm({ ...shiftForm, startTime: e.target.value })} required />
+    <>
+      <div className="form-row" style={{ marginTop: 12 }}>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="label">Start</label>
+          <input className="input" type="time" value={shiftForm.startTime} onChange={e => setShiftForm({ ...shiftForm, startTime: e.target.value })} required />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="label">End</label>
+          <input className="input" type="time" value={shiftForm.endTime} onChange={e => setShiftForm({ ...shiftForm, endTime: e.target.value })} required />
+        </div>
       </div>
-      <div className="form-group" style={{ marginBottom: 0 }}>
-        <label className="label">End</label>
-        <input className="input" type="time" value={shiftForm.endTime} onChange={e => setShiftForm({ ...shiftForm, endTime: e.target.value })} required />
-      </div>
-    </div>
+      {shiftForm.shiftType === 'WORK' && renderBreakField()}
+    </>
   );
 
   // Time fields for SPLIT shift
@@ -269,6 +382,10 @@ export default function ScheduleDetail() {
           <input className="input" type="time" value={shiftForm.splitEnd1} onChange={e => setShiftForm({ ...shiftForm, splitEnd1: e.target.value })} required />
         </div>
       </div>
+      <div className="form-group" style={{ marginTop: 8, marginBottom: 0 }}>
+        <label className="label">Lunch Break (min)</label>
+        <input className="input" type="number" min="0" step="5" value={shiftForm.splitBreak1} onChange={e => setShiftForm({ ...shiftForm, splitBreak1: e.target.value })} style={{ width: 120 }} />
+      </div>
       <div className="split-break-label">Break: {shiftForm.splitEnd1} - {shiftForm.splitStart2}</div>
       <div className="split-label">Afternoon Shift</div>
       <div className="form-row">
@@ -280,6 +397,10 @@ export default function ScheduleDetail() {
           <label className="label">End</label>
           <input className="input" type="time" value={shiftForm.splitEnd2} onChange={e => setShiftForm({ ...shiftForm, splitEnd2: e.target.value })} required />
         </div>
+      </div>
+      <div className="form-group" style={{ marginTop: 8, marginBottom: 0 }}>
+        <label className="label">Lunch Break (min)</label>
+        <input className="input" type="number" min="0" step="5" value={shiftForm.splitBreak2} onChange={e => setShiftForm({ ...shiftForm, splitBreak2: e.target.value })} style={{ width: 120 }} />
       </div>
     </div>
   );
@@ -293,7 +414,7 @@ export default function ScheduleDetail() {
       <div className="page-header">
         <div>
           <h1 className="page-title">{schedule.restaurant.name}</h1>
-          <p className="page-subtitle">{formatDate(schedule.weekStart)} - {formatDate(schedule.weekEnd)}</p>
+          <p className="page-subtitle">{formatDate(schedule.weekStart)} - {getWeekEndDisplay()}</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-secondary" onClick={() => window.print()}><Printer size={18} /> Print</button>
@@ -317,50 +438,79 @@ export default function ScheduleDetail() {
                 <span className="day-date">{getDateForDay(i)}</span>
               </div>
             ))}
+            <div className="schedule-cell schedule-total-header">Total</div>
           </div>
 
-          {Object.keys(employeeShifts).length === 0 ? (
+          {orderedEmployees.length === 0 ? (
             <div className="schedule-empty">
               <Clock size={32} />
               <p>No shifts yet. Click "Add Shift" or click on a cell to add shifts.</p>
             </div>
           ) : (
-            Object.values(employeeShifts).map(({ employee, shifts }) => (
-              <div key={employee.id} className="schedule-row">
-                <div className="schedule-cell schedule-name-cell">
-                  <div className="emp-indicator" style={{ background: employee.color || '#c8956c' }} />
-                  <div>
-                    <strong>{employee.name}</strong>
-                    {employee.role && <span className="schedule-role">{employee.role}</span>}
+            <>
+              {orderedEmployees.map(({ employee, shifts }, rowIdx) => (
+                <div key={employee.id} className="schedule-row">
+                  <div className="schedule-cell schedule-name-cell">
+                    <div className="emp-indicator" style={{ background: employee.color || '#c8956c' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <strong>{employee.name}</strong>
+                      {employee.role && <span className="schedule-role">{employee.role}</span>}
+                    </div>
+                    <div className="emp-row-actions">
+                      <button className="emp-order-btn" title="Move up" onClick={(e) => { e.stopPropagation(); moveEmployee(employee.id, 'up'); }} disabled={rowIdx === 0}><ChevronUp size={12} /></button>
+                      <button className="emp-order-btn" title="Move down" onClick={(e) => { e.stopPropagation(); moveEmployee(employee.id, 'down'); }} disabled={rowIdx === orderedEmployees.length - 1}><ChevronDown size={12} /></button>
+                      <button className="emp-delete-btn" title="Delete row" onClick={(e) => { e.stopPropagation(); handleDeleteEmployeeShifts(employee.id); }}><Trash2 size={12} /></button>
+                    </div>
+                  </div>
+                  {DAYS.map((_, dayIdx) => (
+                    <div
+                      key={dayIdx}
+                      className="schedule-cell schedule-day-cell"
+                      onClick={() => { setQuickAddDay(dayIdx); setQuickAddEmp(employee.id); resetForm(); }}
+                    >
+                      {(shifts[dayIdx] || []).map(shift => (
+                        <div
+                          key={shift.id}
+                          className={`shift-block ${getShiftTypeColor(shift.shiftType)}`}
+                          style={shift.shiftType === 'WORK' ? { borderLeftColor: employee.color || '#c8956c' } : undefined}
+                          onClick={e => { e.stopPropagation(); openEditShift(shift); }}
+                        >
+                          <div className="shift-time">
+                            {getShiftTypeIcon(shift.shiftType)}
+                            {shift.shiftType === 'DAY_OFF' || shift.shiftType === 'SICK' || shift.shiftType === 'VACATION'
+                              ? shift.shiftType.replace('_', ' ')
+                              : `${shift.startTime} - ${shift.endTime}`}
+                          </div>
+                          {shift.shiftType === 'WORK' && shift.breakMinutes > 0 && (
+                            <div className="shift-break-tag">{shift.breakMinutes}m break</div>
+                          )}
+                          {shift.notes && <div className="shift-notes">{shift.notes}</div>}
+                          <button className="shift-delete" onClick={e => { e.stopPropagation(); handleDeleteShift(shift.id); }}><Trash2 size={12} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div className="schedule-cell schedule-total-cell">
+                    {getEmployeeWeekTotal(shifts).toFixed(1)}h
                   </div>
                 </div>
+              ))}
+
+              {/* Totals row */}
+              <div className="schedule-row schedule-totals-row">
+                <div className="schedule-cell schedule-name-cell schedule-totals-label">
+                  <strong>Daily Total</strong>
+                </div>
                 {DAYS.map((_, dayIdx) => (
-                  <div
-                    key={dayIdx}
-                    className="schedule-cell schedule-day-cell"
-                    onClick={() => { setQuickAddDay(dayIdx); setQuickAddEmp(employee.id); resetForm(); }}
-                  >
-                    {(shifts[dayIdx] || []).map(shift => (
-                      <div
-                        key={shift.id}
-                        className={`shift-block ${getShiftTypeColor(shift.shiftType)}`}
-                        style={shift.shiftType === 'WORK' ? { borderLeftColor: employee.color || '#c8956c' } : undefined}
-                        onClick={e => { e.stopPropagation(); openEditShift(shift); }}
-                      >
-                        <div className="shift-time">
-                          {getShiftTypeIcon(shift.shiftType)}
-                          {shift.shiftType === 'DAY_OFF' || shift.shiftType === 'SICK' || shift.shiftType === 'VACATION'
-                            ? shift.shiftType.replace('_', ' ')
-                            : `${shift.startTime} - ${shift.endTime}`}
-                        </div>
-                        {shift.notes && <div className="shift-notes">{shift.notes}</div>}
-                        <button className="shift-delete" onClick={e => { e.stopPropagation(); handleDeleteShift(shift.id); }}><Trash2 size={12} /></button>
-                      </div>
-                    ))}
+                  <div key={dayIdx} className="schedule-cell schedule-total-cell">
+                    {getDayTotal(dayIdx).toFixed(1)}h
                   </div>
                 ))}
+                <div className="schedule-cell schedule-total-cell schedule-grand-total">
+                  {getGrandTotal().toFixed(1)}h
+                </div>
               </div>
-            ))
+            </>
           )}
         </div>
       </div>
@@ -438,16 +588,29 @@ export default function ScheduleDetail() {
           </div>
           {shiftForm.shiftType === 'SPLIT' && renderSplitFields()}
           {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && (
-            <div className="form-row">
-              <div className="form-group">
-                <label className="label">Start Time *</label>
-                <input className="input" type="time" value={shiftForm.startTime} onChange={e => setShiftForm({ ...shiftForm, startTime: e.target.value })} required />
+            <>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="label">Start Time *</label>
+                  <input className="input" type="time" value={shiftForm.startTime} onChange={e => setShiftForm({ ...shiftForm, startTime: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label className="label">End Time *</label>
+                  <input className="input" type="time" value={shiftForm.endTime} onChange={e => setShiftForm({ ...shiftForm, endTime: e.target.value })} required />
+                </div>
               </div>
-              <div className="form-group">
-                <label className="label">End Time *</label>
-                <input className="input" type="time" value={shiftForm.endTime} onChange={e => setShiftForm({ ...shiftForm, endTime: e.target.value })} required />
-              </div>
-            </div>
+              {shiftForm.shiftType === 'WORK' && (
+                <div className="form-group">
+                  <label className="label">Lunch Break (minutes)</label>
+                  <input className="input" type="number" min="0" step="5" value={shiftForm.breakMinutes} onChange={e => setShiftForm({ ...shiftForm, breakMinutes: e.target.value })} style={{ width: 120 }} />
+                  {parseInt(shiftForm.breakMinutes) > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 8 }}>
+                      ({(parseInt(shiftForm.breakMinutes) / 60).toFixed(1)}h not counted in salary)
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
           )}
           <div className="form-group">
             <label className="label">Notes</label>

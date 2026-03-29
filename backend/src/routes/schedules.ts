@@ -19,33 +19,50 @@ router.get('/public/:shareToken', async (req, res) => {
     const now = new Date();
     const dayOfWeek = now.getDay();
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + diffToMonday);
-    monday.setHours(0, 0, 0, 0);
 
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    sunday.setHours(23, 59, 59, 999);
+    // This week (Mon-Sun)
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() + diffToMonday);
+    thisMonday.setHours(0, 0, 0, 0);
+    const thisSunday = new Date(thisMonday);
+    thisSunday.setDate(thisMonday.getDate() + 6);
+    thisSunday.setHours(23, 59, 59, 999);
 
-    const schedule = await prisma.schedule.findFirst({
-      where: {
-        restaurantId: restaurant.id,
-        published: true,
-        weekStart: { gte: monday, lte: sunday },
+    // Next week (Mon-Sun)
+    const nextMonday = new Date(thisMonday);
+    nextMonday.setDate(thisMonday.getDate() + 7);
+    const nextSunday = new Date(nextMonday);
+    nextSunday.setDate(nextMonday.getDate() + 6);
+    nextSunday.setHours(23, 59, 59, 999);
+
+    const shiftInclude = {
+      shifts: {
+        include: { employee: { select: { id: true, name: true, role: true, color: true } } },
+        orderBy: [{ dayOfWeek: 'asc' as const }, { startTime: 'asc' as const }],
       },
-      include: {
-        shifts: {
-          include: { employee: { select: { id: true, name: true, role: true, color: true } } },
-          orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
-        },
-      },
+      employeeOrders: true,
+    };
+
+    const thisWeekSchedule = await prisma.schedule.findFirst({
+      where: { restaurantId: restaurant.id, published: true, weekStart: { gte: thisMonday, lte: thisSunday } },
+      include: shiftInclude,
+    });
+
+    const nextWeekSchedule = await prisma.schedule.findFirst({
+      where: { restaurantId: restaurant.id, published: true, weekStart: { gte: nextMonday, lte: nextSunday } },
+      include: shiftInclude,
     });
 
     res.json({
-      restaurant: { name: restaurant.name, address: restaurant.address },
-      schedule: schedule || null,
-      weekStart: monday.toISOString(),
-      weekEnd: sunday.toISOString(),
+      restaurant: { name: restaurant.name, address: restaurant.address, logoUrl: restaurant.logoUrl },
+      thisWeek: thisWeekSchedule ? {
+        schedule: thisWeekSchedule,
+        weekStart: thisMonday.toISOString(),
+      } : null,
+      nextWeek: nextWeekSchedule ? {
+        schedule: nextWeekSchedule,
+        weekStart: nextMonday.toISOString(),
+      } : null,
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch public schedule' });
@@ -87,6 +104,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
       include: {
         restaurant: true,
         shifts: { include: { employee: true }, orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }] },
+        employeeOrders: true,
       },
     });
     if (!schedule) {
@@ -135,7 +153,17 @@ router.get('/:id/summary', async (req: AuthRequest, res) => {
       if (!emp.dailyBreakdown[shift.dayOfWeek]) emp.dailyBreakdown[shift.dayOfWeek] = { work: 0, break: 0 };
 
       switch (shift.shiftType) {
-        case 'WORK': emp.totalWorkHours += hours; emp.workShifts += 1; emp.daysWorked.add(shift.dayOfWeek); emp.dailyBreakdown[shift.dayOfWeek].work += hours; break;
+        case 'WORK': {
+          const breakHrs = (shift.breakMinutes || 0) / 60;
+          const netWork = hours - breakHrs;
+          emp.totalWorkHours += netWork;
+          emp.totalBreakHours += breakHrs;
+          emp.workShifts += 1;
+          emp.daysWorked.add(shift.dayOfWeek);
+          emp.dailyBreakdown[shift.dayOfWeek].work += netWork;
+          emp.dailyBreakdown[shift.dayOfWeek].break += breakHrs;
+          break;
+        }
         case 'BREAK': emp.totalBreakHours += hours; emp.dailyBreakdown[shift.dayOfWeek].break += hours; break;
         case 'DAY_OFF': emp.daysOff += 1; break;
         case 'SICK': emp.sickDays += 1; break;
@@ -187,8 +215,19 @@ router.get('/salary-report/:restaurantId', async (req: AuthRequest, res) => {
         const [startH, startM] = shift.startTime.split(':').map(Number);
         const [endH, endM] = shift.endTime.split(':').map(Number);
         const hours = (endH + endM / 60) - (startH + startM / 60);
-        if (shift.shiftType === 'WORK') { emp.weeklyBreakdown[weekKey].workHours += hours; emp.weeklyBreakdown[weekKey].shifts += 1; emp.totalWorkHours += hours; emp.totalShifts += 1; }
-        else if (shift.shiftType === 'BREAK') { emp.weeklyBreakdown[weekKey].breakHours += hours; emp.totalBreakHours += hours; }
+        if (shift.shiftType === 'WORK') {
+          const breakHrs = (shift.breakMinutes || 0) / 60;
+          const netWork = hours - breakHrs;
+          emp.weeklyBreakdown[weekKey].workHours += netWork;
+          emp.weeklyBreakdown[weekKey].breakHours += breakHrs;
+          emp.weeklyBreakdown[weekKey].shifts += 1;
+          emp.totalWorkHours += netWork;
+          emp.totalBreakHours += breakHrs;
+          emp.totalShifts += 1;
+        } else if (shift.shiftType === 'BREAK') {
+          emp.weeklyBreakdown[weekKey].breakHours += hours;
+          emp.totalBreakHours += hours;
+        }
       }
     }
 
@@ -229,8 +268,17 @@ router.get('/report/:restaurantId', async (req: AuthRequest, res) => {
         const [startH, startM] = shift.startTime.split(':').map(Number);
         const [endH, endM] = shift.endTime.split(':').map(Number);
         const hours = (endH + endM / 60) - (startH + startM / 60);
-        if (shift.shiftType === 'WORK') { emp.weeklyData[weekKey].workHours += hours; emp.weeklyData[weekKey].shifts += 1; emp.totalWorkHours += hours; emp.totalShifts += 1; }
-        else if (shift.shiftType === 'BREAK') { emp.weeklyData[weekKey].breakHours += hours; emp.totalBreakHours += hours; }
+        if (shift.shiftType === 'WORK') {
+          const breakHrs = (shift.breakMinutes || 0) / 60;
+          const netWork = hours - breakHrs;
+          emp.weeklyData[weekKey].workHours += netWork;
+          emp.weeklyData[weekKey].shifts += 1;
+          emp.totalWorkHours += netWork;
+          emp.totalShifts += 1;
+        } else if (shift.shiftType === 'BREAK') {
+          emp.weeklyData[weekKey].breakHours += hours;
+          emp.totalBreakHours += hours;
+        }
       }
     }
 
@@ -266,7 +314,7 @@ router.post('/', async (req: AuthRequest, res) => {
 
     const schedule = await prisma.schedule.create({
       data: { weekStart: date, weekEnd: end, restaurantId, notes },
-      include: { restaurant: true, shifts: true },
+      include: { restaurant: true, shifts: true, employeeOrders: true },
     });
     res.status(201).json(schedule);
   } catch (error) {
@@ -279,7 +327,7 @@ router.post('/:id/duplicate', async (req: AuthRequest, res) => {
     const { weekStart } = req.body;
     const source = await prisma.schedule.findFirst({
       where: { id: req.params.id as string, restaurant: { userId: req.userId! } },
-      include: { shifts: true },
+      include: { shifts: true, employeeOrders: true },
     });
     if (!source) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
@@ -301,9 +349,10 @@ router.post('/:id/duplicate', async (req: AuthRequest, res) => {
     const newSchedule = await prisma.schedule.create({
       data: {
         weekStart: date, weekEnd: end, restaurantId: source.restaurantId,
-        shifts: { create: source.shifts.map(s => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, shiftType: s.shiftType, notes: s.notes, employeeId: s.employeeId })) },
+        shifts: { create: source.shifts.map(s => ({ dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, shiftType: s.shiftType, breakMinutes: s.breakMinutes, notes: s.notes, employeeId: s.employeeId })) },
+        employeeOrders: { create: source.employeeOrders.map(o => ({ employeeId: o.employeeId, displayOrder: o.displayOrder })) },
       },
-      include: { restaurant: true, shifts: { include: { employee: true } } },
+      include: { restaurant: true, shifts: { include: { employee: true } }, employeeOrders: true },
     });
     res.status(201).json(newSchedule);
   } catch (error) {
@@ -320,7 +369,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
     const schedule = await prisma.schedule.update({
       where: { id: req.params.id as string },
       data: { published, notes },
-      include: { restaurant: true, shifts: { include: { employee: true } } },
+      include: { restaurant: true, shifts: { include: { employee: true } }, employeeOrders: true },
     });
     res.json(schedule);
   } catch (error) {
@@ -339,6 +388,43 @@ router.delete('/:id', async (req: AuthRequest, res) => {
   }
 });
 
+// ─── Employee order management ───
+router.put('/:id/employee-order', async (req: AuthRequest, res) => {
+  try {
+    const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
+
+    const { orders } = req.body; // Array of { employeeId, displayOrder }
+    for (const o of orders) {
+      await prisma.scheduleEmployeeOrder.upsert({
+        where: { scheduleId_employeeId: { scheduleId: req.params.id as string, employeeId: o.employeeId } },
+        update: { displayOrder: o.displayOrder },
+        create: { scheduleId: req.params.id as string, employeeId: o.employeeId, displayOrder: o.displayOrder },
+      });
+    }
+
+    const updated = await prisma.scheduleEmployeeOrder.findMany({ where: { scheduleId: req.params.id as string } });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update employee order' });
+  }
+});
+
+// Delete all shifts for an employee in a schedule
+router.delete('/:id/employee/:employeeId/shifts', async (req: AuthRequest, res) => {
+  try {
+    const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
+    if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
+
+    await prisma.shift.deleteMany({ where: { scheduleId: req.params.id as string, employeeId: req.params.employeeId as string } });
+    // Also remove the order entry
+    await prisma.scheduleEmployeeOrder.deleteMany({ where: { scheduleId: req.params.id as string, employeeId: req.params.employeeId as string } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete employee shifts' });
+  }
+});
+
 // Helper: check if two time ranges overlap
 function timesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
   const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -352,7 +438,7 @@ router.post('/:id/shifts', async (req: AuthRequest, res) => {
     const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
     if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
-    const { employeeId, dayOfWeek, startTime, endTime, shiftType, notes } = req.body;
+    const { employeeId, dayOfWeek, startTime, endTime, shiftType, notes, breakMinutes } = req.body;
     if (shiftType === 'WORK' || shiftType === 'BREAK') {
       const existing = await prisma.shift.findMany({ where: { scheduleId: req.params.id as string, employeeId, dayOfWeek } });
       const overlap = existing.find(s => (s.shiftType === 'WORK' || s.shiftType === 'BREAK') && timesOverlap(startTime, endTime, s.startTime, s.endTime));
@@ -360,7 +446,7 @@ router.post('/:id/shifts', async (req: AuthRequest, res) => {
     }
 
     const shift = await prisma.shift.create({
-      data: { employeeId, dayOfWeek, startTime, endTime, shiftType: shiftType || 'WORK', notes, scheduleId: req.params.id as string },
+      data: { employeeId, dayOfWeek, startTime, endTime, shiftType: shiftType || 'WORK', breakMinutes: breakMinutes || 0, notes, scheduleId: req.params.id as string },
       include: { employee: true },
     });
     res.status(201).json(shift);
@@ -385,7 +471,7 @@ router.post('/:id/shifts/bulk', async (req: AuthRequest, res) => {
 
     const created = await Promise.all(
       shifts.map((s: any) => prisma.shift.create({
-        data: { employeeId: s.employeeId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, shiftType: s.shiftType || 'WORK', notes: s.notes, scheduleId: req.params.id as string },
+        data: { employeeId: s.employeeId, dayOfWeek: s.dayOfWeek, startTime: s.startTime, endTime: s.endTime, shiftType: s.shiftType || 'WORK', breakMinutes: s.breakMinutes || 0, notes: s.notes, scheduleId: req.params.id as string },
         include: { employee: true },
       }))
     );
@@ -397,7 +483,7 @@ router.post('/:id/shifts/bulk', async (req: AuthRequest, res) => {
 
 router.put('/shifts/:shiftId', async (req: AuthRequest, res) => {
   try {
-    const { dayOfWeek, startTime, endTime, shiftType, notes } = req.body;
+    const { dayOfWeek, startTime, endTime, shiftType, notes, breakMinutes } = req.body;
     const current = await prisma.shift.findFirst({
       where: { id: req.params.shiftId as string, schedule: { restaurant: { userId: req.userId! } } },
     });
@@ -411,9 +497,12 @@ router.put('/shifts/:shiftId', async (req: AuthRequest, res) => {
       if (overlap) { res.status(409).json({ error: `Overlaps with existing shift (${overlap.startTime} - ${overlap.endTime})` }); return; }
     }
 
+    const data: any = { dayOfWeek, startTime, endTime, shiftType, notes };
+    if (breakMinutes !== undefined) data.breakMinutes = breakMinutes;
+
     const shift = await prisma.shift.update({
       where: { id: req.params.shiftId as string },
-      data: { dayOfWeek, startTime, endTime, shiftType, notes },
+      data,
       include: { employee: true },
     });
     res.json(shift);
