@@ -200,7 +200,7 @@ export default function PublicSchedule() {
                               ? shift.shiftType.replace('_', ' ')
                               : `${shift.startTime} - ${shift.endTime}`}
                           </div>
-                          {shift.shiftType === 'WORK' && shift.breakMinutes && shift.breakMinutes > 0 && (
+                          {shift.shiftType === 'WORK' && Number(shift.breakMinutes) > 0 && (
                             <div className="pub-shift-break">{shift.breakMinutes}m break</div>
                           )}
                           {shift.notes && <div className="pub-shift-notes">{shift.notes}</div>}
