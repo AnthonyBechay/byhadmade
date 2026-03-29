@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, BarChart3, Sun, Umbrella, Thermometer, Edit3, Share2, Copy, Scissors, Printer, ChevronUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Clock, Coffee, Check, BarChart3, Sun, Umbrella, Thermometer, Edit3, Share2, Copy, Scissors, Printer, ChevronUp, ChevronDown, ClipboardCopy } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './ScheduleDetail.css';
@@ -542,26 +542,84 @@ export default function ScheduleDetail() {
       )}
 
       {/* Quick Add Popover */}
-      {quickAddDay !== null && quickAddEmp && !editingShift && (
-        <div className="quick-add-overlay" onClick={() => { setQuickAddDay(null); setQuickAddEmp(null); }}>
-          <div className="quick-add-popover" onClick={e => e.stopPropagation()}>
-            <h3>Add Shift - {employees.find(e => e.id === quickAddEmp)?.name} ({DAYS[quickAddDay]})</h3>
-            <form onSubmit={handleQuickAdd}>
-              {shiftError && <div className="shift-error">{shiftError}</div>}
-              {renderShiftTypePicker(true)}
-              {shiftForm.shiftType === 'SPLIT' && renderSplitFields()}
-              {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && renderTimeFields()}
-              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
-                <input className="input" value={shiftForm.notes} onChange={e => setShiftForm({ ...shiftForm, notes: e.target.value })} placeholder="Notes (optional)" />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setQuickAddDay(null); setQuickAddEmp(null); }}>Cancel</button>
-                <button type="submit" className="btn btn-primary btn-sm">Add</button>
-              </div>
-            </form>
+      {quickAddDay !== null && quickAddEmp && !editingShift && (() => {
+        // Find days that have shifts for this employee (to offer copy-from)
+        const empData = employeeShifts[quickAddEmp];
+        const daysWithShifts = empData
+          ? DAYS.map((day, i) => ({ dayIdx: i, day, shifts: empData.shifts[i] || [] })).filter(d => d.shifts.length > 0 && d.dayIdx !== quickAddDay)
+          : [];
+
+        const handleCopyFromDay = async (sourceDayIdx: number) => {
+          if (!empData) return;
+          const sourceShifts = empData.shifts[sourceDayIdx] || [];
+          if (sourceShifts.length === 0) return;
+          try {
+            const shiftsToCreate = sourceShifts.map(s => ({
+              employeeId: quickAddEmp!,
+              dayOfWeek: quickAddDay!,
+              startTime: s.startTime,
+              endTime: s.endTime,
+              shiftType: s.shiftType,
+              breakMinutes: s.breakMinutes || 0,
+              notes: s.notes || null,
+            }));
+            await api.post(`/schedules/${id}/shifts/bulk`, { shifts: shiftsToCreate });
+            setQuickAddDay(null);
+            setQuickAddEmp(null);
+            resetForm();
+            load();
+          } catch (err: any) {
+            setShiftError(err.message || 'Failed to copy shifts');
+          }
+        };
+
+        return (
+          <div className="quick-add-overlay" onClick={() => { setQuickAddDay(null); setQuickAddEmp(null); }}>
+            <div className="quick-add-popover" onClick={e => e.stopPropagation()}>
+              <h3>Add Shift - {employees.find(e => e.id === quickAddEmp)?.name} ({DAYS[quickAddDay]})</h3>
+
+              {/* Copy from another day */}
+              {daysWithShifts.length > 0 && (
+                <div className="copy-from-day">
+                  <label className="label" style={{ fontSize: 11, marginBottom: 4 }}>
+                    <ClipboardCopy size={12} /> Copy from another day
+                  </label>
+                  <div className="copy-day-buttons">
+                    {daysWithShifts.map(d => (
+                      <button
+                        key={d.dayIdx}
+                        type="button"
+                        className="copy-day-btn"
+                        onClick={() => handleCopyFromDay(d.dayIdx)}
+                        title={d.shifts.map(s => s.shiftType === 'WORK' || s.shiftType === 'BREAK' ? `${s.startTime}-${s.endTime}` : s.shiftType.replace('_', ' ')).join(', ')}
+                      >
+                        {DAYS_SHORT[d.dayIdx]}
+                        <span className="copy-day-count">{d.shifts.length}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="copy-from-divider"><span>or create new</span></div>
+
+              <form onSubmit={handleQuickAdd}>
+                {shiftError && <div className="shift-error">{shiftError}</div>}
+                {renderShiftTypePicker(true)}
+                {shiftForm.shiftType === 'SPLIT' && renderSplitFields()}
+                {(shiftForm.shiftType === 'WORK' || shiftForm.shiftType === 'BREAK') && renderTimeFields()}
+                <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                  <input className="input" value={shiftForm.notes} onChange={e => setShiftForm({ ...shiftForm, notes: e.target.value })} placeholder="Notes (optional)" />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setQuickAddDay(null); setQuickAddEmp(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary btn-sm">Add</button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Add Shift Modal (for adding to any employee/day) */}
       <Modal isOpen={showAddShift} onClose={() => { setShowAddShift(false); resetForm(); }} title="Add Shift">

@@ -286,6 +286,67 @@
   margin-bottom: 16px;
 }
 
+/* Copy from another day */
+.copy-from-day {
+  margin-bottom: 8px;
+}
+.copy-from-day .label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.copy-day-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.copy-day-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.copy-day-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+  background: rgba(200, 149, 108, 0.08);
+}
+.copy-day-count {
+  background: rgba(200, 149, 108, 0.15);
+  color: var(--color-primary);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+.copy-from-divider {
+  position: relative;
+  text-align: center;
+  margin: 12px 0;
+  border-top: 1px solid var(--color-border);
+}
+.copy-from-divider span {
+  position: relative;
+  top: -9px;
+  background: var(--color-bg-warm);
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* Shift type picker */
 .shift-type-picker {
   display: flex;
