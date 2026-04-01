@@ -28,10 +28,11 @@ async function verifyRestaurant(restaurantId: string, userId: string) {
 // ─── List orders (optionally by restaurant) ───
 router.get('/', async (req: AuthRequest, res) => {
   try {
-    const { restaurantId, status } = req.query;
+    const restaurantId = req.query.restaurantId as string | undefined;
+    const status = req.query.status as string | undefined;
     const where: any = { restaurant: { userId: req.userId! } };
-    if (restaurantId) where.restaurantId = restaurantId as string;
-    if (status) where.status = status as string;
+    if (restaurantId) where.restaurantId = restaurantId;
+    if (status) where.status = status;
 
     const orders = await prisma.order.findMany({
       where,
@@ -51,12 +52,13 @@ router.get('/', async (req: AuthRequest, res) => {
 // ─── Get single order ───
 router.get('/:id', async (req: AuthRequest, res) => {
   try {
+    const id = req.params.id as string;
     const order = await prisma.order.findFirst({
-      where: { id: req.params.id, restaurant: { userId: req.userId! } },
+      where: { id, restaurant: { userId: req.userId! } },
       include: {
         restaurant: { select: { id: true, name: true } },
         items: true,
-        photos: { orderBy: { createdAt: 'asc' } },
+        photos: { orderBy: { createdAt: 'asc' as const } },
       },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
@@ -103,8 +105,9 @@ router.post('/', async (req: AuthRequest, res) => {
 // ─── Update order (status, details, items) ───
 router.put('/:id', async (req: AuthRequest, res) => {
   try {
+    const id = req.params.id as string;
     const order = await prisma.order.findFirst({
-      where: { id: req.params.id, restaurant: { userId: req.userId! } },
+      where: { id, restaurant: { userId: req.userId! } },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
 
@@ -150,8 +153,9 @@ router.put('/:id', async (req: AuthRequest, res) => {
 // ─── Delete order ───
 router.delete('/:id', async (req: AuthRequest, res) => {
   try {
+    const id = req.params.id as string;
     const order = await prisma.order.findFirst({
-      where: { id: req.params.id, restaurant: { userId: req.userId! } },
+      where: { id, restaurant: { userId: req.userId! } },
       include: { photos: true },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
@@ -171,8 +175,9 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 // ─── Upload photos to order ───
 router.post('/:id/photos', upload.array('photos', 10), async (req: AuthRequest, res) => {
   try {
+    const id = req.params.id as string;
     const order = await prisma.order.findFirst({
-      where: { id: req.params.id, restaurant: { userId: req.userId! } },
+      where: { id, restaurant: { userId: req.userId! } },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
 
@@ -206,11 +211,13 @@ router.post('/:id/photos', upload.array('photos', 10), async (req: AuthRequest, 
 // ─── Delete a photo ───
 router.delete('/photos/:photoId', async (req: AuthRequest, res) => {
   try {
+    const photoId = req.params.photoId as string;
     const photo = await prisma.orderPhoto.findUnique({
-      where: { id: req.params.photoId },
+      where: { id: photoId },
       include: { order: { include: { restaurant: true } } },
     });
-    if (!photo || photo.order.restaurant.userId !== req.userId) {
+    if (!photo) { res.status(404).json({ error: 'Photo not found' }); return; }
+    if (photo.order.restaurant.userId !== req.userId) {
       res.status(404).json({ error: 'Photo not found' });
       return;
     }
