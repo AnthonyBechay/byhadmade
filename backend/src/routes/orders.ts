@@ -195,11 +195,15 @@ router.post('/:id/photos', upload.array('photos', 10), async (req: AuthRequest, 
     const photoType = (req.body.type as string) || 'INGREDIENT';
     const caption = (req.body.caption as string) || null;
 
+    // Build a clean folder path: {userId}/orders/{supplier}/{date}/{type}_{shortId}.ext
+    const supplierSlug = (order.supplier || 'no-supplier').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const dateSlug = order.orderDate.toISOString().slice(0, 10); // YYYY-MM-DD
+    const folderPath = `${req.userId}/orders/${supplierSlug}/${dateSlug}`;
+
     const created = [];
     for (const file of files) {
       const ext = path.extname(file.originalname) || '.jpg';
-      const url = await uploadToR2(file.buffer, file.mimetype, 'orders', ext, {
-        entityId: order.id,
+      const url = await uploadToR2(file.buffer, file.mimetype, folderPath, ext, {
         label: photoType.toLowerCase(),
       });
       const photo = await prisma.orderPhoto.create({
