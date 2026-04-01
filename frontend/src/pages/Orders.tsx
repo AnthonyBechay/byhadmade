@@ -65,7 +65,6 @@ export default function Orders() {
   const [showPhotos, setShowPhotos] = useState<Order | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [showReceived, setShowReceived] = useState(false);
-  const [showAllPast, setShowAllPast] = useState(false);
 
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
@@ -132,12 +131,6 @@ export default function Orders() {
   const expectedOrders = filteredOrders.filter(o => o.status === 'ORDERED');
   const allPastOrders = filteredOrders.filter(o => o.status === 'RECEIVED' || o.status === 'STOCKED' || o.status === 'CANCELLED');
 
-  // Past orders: last 30 days by default, show all on demand
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const recentPastOrders = allPastOrders.filter(o => new Date(o.orderDate) >= thirtyDaysAgo);
-  const pastOrders = showAllPast ? allPastOrders : recentPastOrders;
-  const hasOlderOrders = allPastOrders.length > recentPastOrders.length;
 
   // Get the supplier's delivery type
   const getSupplierDeliveryType = (supplierName: string) => {
@@ -316,6 +309,11 @@ export default function Orders() {
   };
 
   // ─── Status actions ───
+  const markStocked = async (order: Order) => {
+    await api.put(`/orders/${order.id}`, { status: 'STOCKED' });
+    loadOrders();
+  };
+
   const markCancelled = async (order: Order) => {
     if (!confirm('Cancel this order?')) return;
     await api.put(`/orders/${order.id}`, { status: 'CANCELLED' });
@@ -631,6 +629,9 @@ export default function Orders() {
                   <button className="btn btn-primary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Receive</button>
                 </>
               )}
+              {order.status === 'RECEIVED' && (
+                <button className="btn btn-sm" style={{ background: '#7b68a8', color: '#fff' }} onClick={() => markStocked(order)}><Warehouse size={14} /> Stock</button>
+              )}
               {(order.status === 'RECEIVED' || order.status === 'STOCKED') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => openReceive(order)}><Edit3 size={14} /> Edit Details</button>
               )}
@@ -706,24 +707,52 @@ export default function Orders() {
 
           {allPastOrders.length > 0 && (
             <div className="past-orders-section">
-              <button className="past-orders-toggle" onClick={() => setShowReceived(!showReceived)}>
-                {showReceived ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Past Orders ({allPastOrders.length})
-              </button>
-              {showReceived && (
+              <h3 className="past-orders-title">Past Orders</h3>
+
+              {/* Last 6 orders as summary cards */}
+              <div className="past-orders-grid">
+                {allPastOrders.slice(0, 6).map(order => {
+                  const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.ORDERED;
+                  const StatusIcon = cfg.icon;
+                  const total = itemsTotal(order.items);
+                  return (
+                    <div key={order.id} className={`past-order-card ${order.status.toLowerCase()}`} onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}>
+                      <div className="past-order-card-top">
+                        <div className="order-status-badge" style={{ background: cfg.color, fontSize: 10, padding: '2px 7px' }}>
+                          <StatusIcon size={11} /> {cfg.label}
+                        </div>
+                        {(order.status === 'RECEIVED' || order.status === 'STOCKED') && (
+                          <span className={`paid-badge ${order.isPaid ? 'paid' : 'unpaid'}`} onClick={e => { e.stopPropagation(); togglePaid(order); }}>
+                            <DollarSign size={10} /> {order.isPaid ? 'Paid' : 'Unpaid'}
+                          </span>
+                        )}
+                      </div>
+                      <strong className="past-order-card-supplier">{order.supplier || 'No supplier'}</strong>
+                      <span className="past-order-card-meta">{formatDate(order.orderDate)}</span>
+                      <span className="past-order-card-meta">{order.items.length} item{order.items.length !== 1 ? 's' : ''}{total > 0 ? ` · $${total.toFixed(2)}` : ''}</span>
+                      <div className="past-order-card-actions" onClick={e => e.stopPropagation()}>
+                        {order.status === 'RECEIVED' && (
+                          <button className="btn-icon" title="Stock" onClick={() => markStocked(order)}><Warehouse size={13} /></button>
+                        )}
+                        <button className="btn-icon" title="Edit" onClick={() => openReceive(order)}><Edit3 size={13} /></button>
+                        <button className="btn-icon" title="Photos" onClick={() => openPhotos(order)}><Camera size={13} /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Remaining orders collapsed */}
+              {allPastOrders.length > 6 && (
                 <>
-                  <div className="orders-list" style={{ marginTop: 12 }}>
-                    {pastOrders.map(renderOrderCard)}
-                  </div>
-                  {hasOlderOrders && !showAllPast && (
-                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setShowAllPast(true)}>
-                      Show orders older than 30 days ({allPastOrders.length - recentPastOrders.length} more)
-                    </button>
-                  )}
-                  {showAllPast && hasOlderOrders && (
-                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setShowAllPast(false)}>
-                      Show last 30 days only
-                    </button>
+                  <button className="past-orders-toggle" onClick={() => setShowReceived(!showReceived)}>
+                    {showReceived ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    Older Orders ({allPastOrders.length - 6} more)
+                  </button>
+                  {showReceived && (
+                    <div className="orders-list" style={{ marginTop: 12 }}>
+                      {allPastOrders.slice(6).map(renderOrderCard)}
+                    </div>
                   )}
                 </>
               )}

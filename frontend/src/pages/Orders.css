@@ -211,6 +211,61 @@
   padding-top: 20px;
   border-top: 1px solid var(--color-border);
 }
+.past-orders-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 0 0 14px;
+}
+
+/* ─── Past Orders Grid (6 cards) ─── */
+.past-orders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.past-order-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.past-order-card:hover {
+  border-color: rgba(200, 149, 108, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.past-order-card.received { border-left: 3px solid #4a9e6a; }
+.past-order-card.stocked { border-left: 3px solid #7b68a8; }
+.past-order-card.cancelled { border-left: 3px solid #e05555; opacity: 0.7; }
+
+.past-order-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.past-order-card-supplier {
+  font-size: 14px;
+  color: var(--color-text);
+  margin-top: 2px;
+}
+.past-order-card-meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.past-order-card-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .past-orders-toggle {
   display: flex;
   align-items: center;
@@ -726,5 +781,8 @@
   }
   .receive-paid-toggle {
     flex-direction: column;
+  }
+  .past-orders-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 }
