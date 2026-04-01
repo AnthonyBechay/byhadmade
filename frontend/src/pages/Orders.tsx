@@ -709,34 +709,92 @@ export default function Orders() {
             <div className="past-orders-section">
               <h3 className="past-orders-title">Past Orders</h3>
 
-              {/* Last 6 orders as summary cards */}
+              {/* Last 6 orders as compact cards — expand inline on click */}
               <div className="past-orders-grid">
                 {allPastOrders.slice(0, 6).map(order => {
                   const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.ORDERED;
                   const StatusIcon = cfg.icon;
                   const total = itemsTotal(order.items);
+                  const isExpanded = expandedOrder === order.id;
+                  const showStockInfo = order.status === 'RECEIVED' || order.status === 'STOCKED';
                   return (
-                    <div key={order.id} className={`past-order-card ${order.status.toLowerCase()}`} onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}>
-                      <div className="past-order-card-top">
-                        <div className="order-status-badge" style={{ background: cfg.color, fontSize: 10, padding: '2px 7px' }}>
-                          <StatusIcon size={11} /> {cfg.label}
+                    <div key={order.id} className={`past-order-card ${order.status.toLowerCase()} ${isExpanded ? 'expanded' : ''}`}>
+                      <div className="past-order-card-summary" onClick={() => setExpandedOrder(isExpanded ? null : order.id)}>
+                        <div className="past-order-card-top">
+                          <div className="order-status-badge" style={{ background: cfg.color, fontSize: 10, padding: '2px 7px' }}>
+                            <StatusIcon size={11} /> {cfg.label}
+                          </div>
+                          {(order.status === 'RECEIVED' || order.status === 'STOCKED') && (
+                            <span className={`paid-badge ${order.isPaid ? 'paid' : 'unpaid'}`} onClick={e => { e.stopPropagation(); togglePaid(order); }}>
+                              <DollarSign size={10} /> {order.isPaid ? 'Paid' : 'Unpaid'}
+                            </span>
+                          )}
+                          <span style={{ marginLeft: 'auto' }}>{isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
                         </div>
-                        {(order.status === 'RECEIVED' || order.status === 'STOCKED') && (
-                          <span className={`paid-badge ${order.isPaid ? 'paid' : 'unpaid'}`} onClick={e => { e.stopPropagation(); togglePaid(order); }}>
-                            <DollarSign size={10} /> {order.isPaid ? 'Paid' : 'Unpaid'}
-                          </span>
-                        )}
+                        <strong className="past-order-card-supplier">{order.supplier || 'No supplier'}</strong>
+                        <span className="past-order-card-meta">{formatDate(order.orderDate)} · {order.items.length} item{order.items.length !== 1 ? 's' : ''}{total > 0 ? ` · $${total.toFixed(2)}` : ''}</span>
                       </div>
-                      <strong className="past-order-card-supplier">{order.supplier || 'No supplier'}</strong>
-                      <span className="past-order-card-meta">{formatDate(order.orderDate)}</span>
-                      <span className="past-order-card-meta">{order.items.length} item{order.items.length !== 1 ? 's' : ''}{total > 0 ? ` · $${total.toFixed(2)}` : ''}</span>
-                      <div className="past-order-card-actions" onClick={e => e.stopPropagation()}>
-                        {order.status === 'RECEIVED' && (
-                          <button className="btn-icon" title="Stock" onClick={() => markStocked(order)}><Warehouse size={13} /></button>
-                        )}
-                        <button className="btn-icon" title="Edit" onClick={() => openReceive(order)}><Edit3 size={13} /></button>
-                        <button className="btn-icon" title="Photos" onClick={() => openPhotos(order)}><Camera size={13} /></button>
-                      </div>
+
+                      {isExpanded && (
+                        <div className="past-order-card-details">
+                          <div className="order-items-list">
+                            <div className="order-items-header">
+                              <span style={{ flex: 2 }}>Item</span>
+                              <span>Qty</span>
+                              <span>Price</span>
+                              <span>Total</span>
+                              {showStockInfo && <span>Storage</span>}
+                            </div>
+                            {order.items.map(item => (
+                              <div key={item.id} className="order-item-row">
+                                <span style={{ flex: 2 }}>{item.name}</span>
+                                <span>{item.quantity ?? '-'}{item.unit ? ` ${item.unit}` : ''}</span>
+                                <span>{item.price != null ? `$${item.price.toFixed(2)}` : '-'}</span>
+                                <span>{(item.price != null && item.quantity != null) ? `$${lineTotalData(item).toFixed(2)}` : '-'}</span>
+                                {showStockInfo && <span>{item.storageLocation || '-'}</span>}
+                              </div>
+                            ))}
+                            {total > 0 && (
+                              <div className="order-item-row order-items-total">
+                                <span style={{ flex: 2 }}><strong>Total</strong></span>
+                                <span></span><span></span>
+                                <span><strong>${total.toFixed(2)}</strong></span>
+                                {showStockInfo && <span></span>}
+                              </div>
+                            )}
+                          </div>
+
+                          {order.totalPaid != null && (
+                            <div className="past-order-detail-row">Total Paid: <strong>${order.totalPaid.toFixed(2)} {order.currency}</strong></div>
+                          )}
+                          {order.receivedAt && (
+                            <div className="past-order-detail-row">Received: {formatDateTime(order.receivedAt)}</div>
+                          )}
+                          {order.notes && (
+                            <div className="past-order-detail-row">{order.notes}</div>
+                          )}
+
+                          {order.photos.length > 0 && (
+                            <div className="order-photos-preview" style={{ marginTop: 8 }}>
+                              {order.photos.map(p => (
+                                <div key={p.id} className="photo-thumb" onClick={() => setPhotoPreview(p.url)}>
+                                  <img src={p.url} alt="" />
+                                  <span className={`photo-type-tag ${p.type.toLowerCase()}`}>{p.type === 'INVOICE' ? 'Inv' : 'Pic'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="past-order-card-actions">
+                            {order.status === 'RECEIVED' && (
+                              <button className="btn btn-sm" style={{ background: '#7b68a8', color: '#fff' }} onClick={() => markStocked(order)}><Warehouse size={13} /> Stock</button>
+                            )}
+                            <button className="btn btn-secondary btn-sm" onClick={() => openReceive(order)}><Edit3 size={13} /> Edit</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => openPhotos(order)}><Camera size={13} /> Photos</button>
+                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-danger)' }} onClick={() => deleteOrder(order)}><Trash2 size={13} /></button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
