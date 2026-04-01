@@ -17,8 +17,10 @@ model User {
   recipes      Recipe[]
   menus        Menu[]
   restaurants  Restaurant[]
-  suppliers         Supplier[]
-  storageLocations  StorageLocation[]
+  suppliers              Supplier[]
+  storageLocations       StorageLocation[]
+  ingredientCategories   IngredientCategory[]
+  ingredientTags         IngredientTag[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 }
@@ -53,15 +55,16 @@ model Subcategory {
 }
 
 model Supplier {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String?
-  email     String?
-  notes     String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  name         String
+  phone        String?
+  email        String?
+  deliveryType String?  // e.g. "Truck", "Pickup", "Courier", "Walk-in"
+  notes        String?
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@unique([name, userId])
 }
@@ -78,14 +81,48 @@ model StorageLocation {
   @@unique([name, userId])
 }
 
+model IngredientCategory {
+  id             String                  @id @default(cuid())
+  name           String
+  userId         String
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subcategories  IngredientSubcategory[]
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@unique([name, userId])
+}
+
+model IngredientSubcategory {
+  id         String             @id @default(cuid())
+  name       String
+  categoryId String
+  category   IngredientCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@unique([name, categoryId])
+}
+
+model IngredientTag {
+  id          String       @id @default(cuid())
+  name        String
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredients Ingredient[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([name, userId])
+}
+
 model Ingredient {
   id               String             @id @default(cuid())
   name             String
   unit             String?
   category         String?
   subcategory      String?
-  tag              String?
-  supplier         String?            // supplier name (free text for flexibility)
+  supplier         String?            // supplier name (from Settings)
   purchaseUnit     String?            // how it's bought: kg, box, case, etc.
   purchaseQty      Float?             // qty per purchase unit (e.g. 10kg per box)
   unitPrice        Float?             // price per purchase unit
@@ -94,6 +131,7 @@ model Ingredient {
   notes            String?
   userId           String
   user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags             IngredientTag[]
   recipeIngredients RecipeIngredient[]
   orderItems       OrderItem[]
   createdAt        DateTime           @default(now())

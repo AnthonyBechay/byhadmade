@@ -107,6 +107,42 @@
   -webkit-box-orient: vertical;
 }
 
+/* ─── Tag Picker ─── */
+.tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  min-height: 40px;
+  align-items: center;
+}
+.tag-pick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tag-pick-btn:hover {
+  border-color: rgba(168, 130, 200, 0.5);
+  color: var(--color-text);
+}
+.tag-pick-btn.active {
+  background: rgba(168, 130, 200, 0.2);
+  border-color: rgba(168, 130, 200, 0.5);
+  color: #b89fd4;
+  font-weight: 600;
+}
+
 /* ─── Mobile ─── */
 @media (max-width: 768px) {
   .ing-cards {

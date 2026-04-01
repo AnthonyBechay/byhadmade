@@ -1,16 +1,21 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  Package, Plus, Trash2, Truck, Check, X, Camera, Upload, ChevronDown, ChevronRight,
-  Clock, CheckCircle, XCircle, FileText, Image as ImageIcon, DollarSign, Warehouse
+  Package, Plus, Trash2, Check, X, Camera, Upload, ChevronDown, ChevronRight,
+  Clock, CheckCircle, XCircle, FileText, Image as ImageIcon, DollarSign, Warehouse,
+  Search, Filter
 } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import './Orders.css';
 
 interface Restaurant { id: string; name: string }
-interface Supplier { id: string; name: string }
+interface Supplier { id: string; name: string; deliveryType: string | null }
 interface StorageLocationItem { id: string; name: string; notes: string | null }
-interface Ingredient { id: string; name: string; unit: string | null; purchaseUnit: string | null; unitPrice: number | null; supplier: string | null }
+interface Ingredient {
+  id: string; name: string; unit: string | null; purchaseUnit: string | null;
+  unitPrice: number | null; supplier: string | null; category: string | null;
+  subcategory: string | null;
+}
 interface OrderItemData {
   id: string; name: string; quantity: number | null; unit: string | null; price: number | null;
   notes: string | null; ingredientId: string | null; ingredient: Ingredient | null;
@@ -29,13 +34,15 @@ interface Order {
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   ORDERED: { label: 'Ordered', color: '#d4a035', icon: Clock },
-  DELIVERED: { label: 'Delivered', color: '#5b9bd5', icon: Truck },
   RECEIVED: { label: 'Received', color: '#4a9e6a', icon: CheckCircle },
   STOCKED: { label: 'Stocked', color: '#7b68a8', icon: Warehouse },
   CANCELLED: { label: 'Cancelled', color: '#e05555', icon: XCircle },
 };
 
-interface ItemRow { ingredientId: string; name: string; quantity: string; unit: string; price: string; notes: string; expiryDate: string; storageLocation: string }
+interface ItemRow {
+  ingredientId: string; name: string; quantity: string; unit: string;
+  price: string; notes: string; expiryDate: string; storageLocation: string;
+}
 const EMPTY_ITEM: ItemRow = { ingredientId: '', name: '', quantity: '', unit: '', price: '', notes: '', expiryDate: '', storageLocation: '' };
 
 const UNITS = ['kg', 'g', 'lb', 'pcs', 'box', 'bag', 'case', 'L', 'mL', 'dozen', 'bunch', 'can', 'bottle'];
@@ -50,35 +57,37 @@ export default function Orders() {
   const [showCreate, setShowCreate] = useState(false);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [showReceive, setShowReceive] = useState<Order | null>(null);
-  const [showStock, setShowStock] = useState<Order | null>(null);
   const [showPhotos, setShowPhotos] = useState<Order | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [showReceived, setShowReceived] = useState(false);
 
+  // Filters
+  const [filterSupplier, setFilterSupplier] = useState('');
+  const [filterIngredient, setFilterIngredient] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
   // Create form
   const [createRestaurant, setCreateRestaurant] = useState('');
   const [createSupplier, setCreateSupplier] = useState('');
-  const [createDeliveryType, setCreateDeliveryType] = useState('');
   const [createNotes, setCreateNotes] = useState('');
   const [createItems, setCreateItems] = useState<ItemRow[]>([{ ...EMPTY_ITEM }]);
   const [createError, setCreateError] = useState('');
 
-  // Receive form
+  // Receive form — everything in one modal
   const [receiveTotalPaid, setReceiveTotalPaid] = useState('');
   const [receiveCurrency, setReceiveCurrency] = useState('USD');
-  const [receiveDeliveryType, setReceiveDeliveryType] = useState('');
+  const [receiveIsPaid, setReceiveIsPaid] = useState(false);
   const [receiveNotes, setReceiveNotes] = useState('');
   const [receiveItems, setReceiveItems] = useState<ItemRow[]>([]);
   const [receiveError, setReceiveError] = useState('');
-
-  // Stock form
-  const [stockItems, setStockItems] = useState<{ name: string; ingredientId: string; quantity: string; unit: string; expiryDate: string; storageLocation: string; price: string; notes: string }[]>([]);
-  const [stockError, setStockError] = useState('');
 
   // Photo upload
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [photoType, setPhotoType] = useState('INGREDIENT');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiveFileRef = useRef<HTMLInputElement>(null);
+  const [receiveUploadingPhotos, setReceiveUploadingPhotos] = useState(false);
+  const [receivePhotoType, setReceivePhotoType] = useState('INGREDIENT');
 
   useEffect(() => {
     api.get('/restaurants').then((r: Restaurant[]) => {
@@ -98,20 +107,37 @@ export default function Orders() {
     api.get(q).then(setOrders);
   };
 
-  const expectedOrders = orders.filter(o => o.status === 'ORDERED' || o.status === 'DELIVERED');
-  const pastOrders = orders.filter(o => o.status === 'RECEIVED' || o.status === 'STOCKED' || o.status === 'CANCELLED');
+  // Filtering
+  const applyFilters = (list: Order[]) => {
+    let result = list;
+    if (filterSupplier) result = result.filter(o => o.supplier === filterSupplier);
+    if (filterIngredient) result = result.filter(o => o.items.some(it => it.ingredientId === filterIngredient || it.name.toLowerCase().includes(filterIngredient.toLowerCase())));
+    if (filterStatus) result = result.filter(o => o.status === filterStatus);
+    return result;
+  };
+
+  const filteredOrders = applyFilters(orders);
+  const expectedOrders = filteredOrders.filter(o => o.status === 'ORDERED');
+  const pastOrders = filteredOrders.filter(o => o.status === 'RECEIVED' || o.status === 'STOCKED' || o.status === 'CANCELLED');
+
+  // Get the supplier's delivery type
+  const getSupplierDeliveryType = (supplierName: string) => {
+    const s = suppliers.find(sup => sup.name === supplierName);
+    return s?.deliveryType || null;
+  };
 
   // ─── Create Order ───
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError('');
-    const validItems = createItems.filter(it => it.name.trim());
-    if (!validItems.length) { setCreateError('Add at least one item'); return; }
+    const validItems = createItems.filter(it => it.ingredientId);
+    if (!validItems.length) { setCreateError('Add at least one ingredient'); return; }
+    const deliveryType = getSupplierDeliveryType(createSupplier);
     try {
       await api.post('/orders', {
         restaurantId: createRestaurant || selectedRestaurant || restaurants[0]?.id,
         supplier: createSupplier,
-        deliveryType: createDeliveryType,
+        deliveryType,
         notes: createNotes,
         items: validItems.map(it => ({
           ingredientId: it.ingredientId || null,
@@ -125,7 +151,7 @@ export default function Orders() {
   };
 
   const resetCreateForm = () => {
-    setCreateSupplier(''); setCreateDeliveryType(''); setCreateNotes('');
+    setCreateSupplier(''); setCreateNotes('');
     setCreateItems([{ ...EMPTY_ITEM }]); setCreateError('');
   };
 
@@ -135,23 +161,15 @@ export default function Orders() {
     setCreateItems(copy);
   };
 
-  const selectIngredientForCreate = (idx: number, ingredientId: string) => {
-    const ing = ingredients.find(i => i.id === ingredientId);
-    if (!ing) return;
-    const copy = [...createItems];
-    copy[idx] = { ...copy[idx], ingredientId: ing.id, name: ing.name, unit: ing.purchaseUnit || ing.unit || '', price: ing.unitPrice ? String(ing.unitPrice) : '' };
-    setCreateItems(copy);
-  };
-
   const addCreateItem = () => setCreateItems([...createItems, { ...EMPTY_ITEM }]);
   const removeCreateItem = (idx: number) => setCreateItems(createItems.filter((_, i) => i !== idx));
 
-  // ─── Receive / Update Order ───
+  // ─── Receive Order (unified modal) ───
   const openReceive = (order: Order) => {
     setShowReceive(order);
     setReceiveTotalPaid(order.totalPaid ? String(order.totalPaid) : '');
     setReceiveCurrency(order.currency || 'USD');
-    setReceiveDeliveryType(order.deliveryType || '');
+    setReceiveIsPaid(order.isPaid);
     setReceiveNotes(order.notes || '');
     setReceiveItems(order.items.map(it => ({
       ingredientId: it.ingredientId || '', name: it.name,
@@ -163,7 +181,7 @@ export default function Orders() {
     setReceiveError('');
   };
 
-  const handleReceive = async (e: React.FormEvent, newStatus: string) => {
+  const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showReceive) return;
     setReceiveError('');
@@ -171,9 +189,30 @@ export default function Orders() {
     if (!validItems.length) { setReceiveError('At least one item required'); return; }
     try {
       await api.put(`/orders/${showReceive.id}`, {
-        status: newStatus,
+        status: 'RECEIVED',
+        isPaid: receiveIsPaid,
         totalPaid: receiveTotalPaid, currency: receiveCurrency,
-        deliveryType: receiveDeliveryType, notes: receiveNotes,
+        notes: receiveNotes,
+        items: validItems.map(it => ({
+          ingredientId: it.ingredientId || null, name: it.name,
+          quantity: it.quantity, unit: it.unit, price: it.price, notes: it.notes,
+          expiryDate: it.expiryDate || null, storageLocation: it.storageLocation || null,
+        })),
+      });
+      setShowReceive(null);
+      loadOrders();
+    } catch (err: any) { setReceiveError(err.message); }
+  };
+
+  const handleSaveReceiveEdits = async () => {
+    if (!showReceive) return;
+    setReceiveError('');
+    const validItems = receiveItems.filter(it => it.name.trim());
+    try {
+      await api.put(`/orders/${showReceive.id}`, {
+        isPaid: receiveIsPaid,
+        totalPaid: receiveTotalPaid, currency: receiveCurrency,
+        notes: receiveNotes,
         items: validItems.map(it => ({
           ingredientId: it.ingredientId || null, name: it.name,
           quantity: it.quantity, unit: it.unit, price: it.price, notes: it.notes,
@@ -191,49 +230,8 @@ export default function Orders() {
     setReceiveItems(copy);
   };
 
-  const selectIngredientForReceive = (idx: number, ingredientId: string) => {
-    const ing = ingredients.find(i => i.id === ingredientId);
-    if (!ing) return;
-    const copy = [...receiveItems];
-    copy[idx] = { ...copy[idx], ingredientId: ing.id, name: ing.name, unit: ing.purchaseUnit || ing.unit || '', price: ing.unitPrice ? String(ing.unitPrice) : '' };
-    setReceiveItems(copy);
-  };
-
   const addReceiveItem = () => setReceiveItems([...receiveItems, { ...EMPTY_ITEM }]);
   const removeReceiveItem = (idx: number) => setReceiveItems(receiveItems.filter((_, i) => i !== idx));
-
-  // ─── Add to Stock ───
-  const openStock = (order: Order) => {
-    setShowStock(order);
-    setStockItems(order.items.map(it => ({
-      name: it.name,
-      ingredientId: it.ingredientId || '',
-      quantity: it.quantity ? String(it.quantity) : '',
-      unit: it.unit || '',
-      expiryDate: it.expiryDate ? it.expiryDate.slice(0, 10) : '',
-      storageLocation: it.storageLocation || '',
-      price: it.price ? String(it.price) : '',
-      notes: it.notes || '',
-    })));
-    setStockError('');
-  };
-
-  const handleStock = async () => {
-    if (!showStock) return;
-    setStockError('');
-    try {
-      await api.put(`/orders/${showStock.id}`, {
-        status: 'STOCKED',
-        items: stockItems.map(it => ({
-          ingredientId: it.ingredientId || null, name: it.name,
-          quantity: it.quantity, unit: it.unit, price: it.price, notes: it.notes,
-          expiryDate: it.expiryDate || null, storageLocation: it.storageLocation || null,
-        })),
-      });
-      setShowStock(null);
-      loadOrders();
-    } catch (err: any) { setStockError(err.message); }
-  };
 
   // ─── Paid toggle ───
   const togglePaid = async (order: Order) => {
@@ -242,11 +240,6 @@ export default function Orders() {
   };
 
   // ─── Status actions ───
-  const markDelivered = async (order: Order) => {
-    await api.put(`/orders/${order.id}`, { status: 'DELIVERED' });
-    loadOrders();
-  };
-
   const markCancelled = async (order: Order) => {
     if (!confirm('Cancel this order?')) return;
     await api.put(`/orders/${order.id}`, { status: 'CANCELLED' });
@@ -265,27 +258,29 @@ export default function Orders() {
     setPhotoType('INGREDIENT');
   };
 
-  const handlePhotoUpload = async (files: FileList | null) => {
-    if (!files || !files.length || !showPhotos) return;
-    setUploadingPhotos(true);
+  const handlePhotoUpload = async (files: FileList | null, orderId: string, type: string, setUploading: (v: boolean) => void, inputRef: React.RefObject<HTMLInputElement | null>) => {
+    if (!files || !files.length) return;
+    setUploading(true);
     try {
-      await api.uploadFiles(`/orders/${showPhotos.id}/photos`, Array.from(files), 'photos', { type: photoType });
-      const updated = await api.get(`/orders/${showPhotos.id}`);
-      setShowPhotos(updated);
+      await api.uploadFiles(`/orders/${orderId}/photos`, Array.from(files), 'photos', { type });
       loadOrders();
+      // Refresh the modal order if open
+      const updated = await api.get(`/orders/${orderId}`);
+      if (showPhotos?.id === orderId) setShowPhotos(updated);
+      if (showReceive?.id === orderId) setShowReceive(updated);
     } catch (err: any) {
       alert(err.message || 'Upload failed');
     } finally {
-      setUploadingPhotos(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
     }
   };
 
-  const deletePhoto = async (photoId: string) => {
-    if (!showPhotos) return;
+  const deletePhoto = async (photoId: string, orderId: string) => {
     await api.delete(`/orders/photos/${photoId}`);
-    const updated = await api.get(`/orders/${showPhotos.id}`);
-    setShowPhotos(updated);
+    const updated = await api.get(`/orders/${orderId}`);
+    if (showPhotos?.id === orderId) setShowPhotos(updated);
+    if (showReceive?.id === orderId) setShowReceive(updated);
     loadOrders();
   };
 
@@ -293,43 +288,127 @@ export default function Orders() {
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const formatDateTime = (d: string) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const itemsTotal = (items: OrderItemData[]) => items.reduce((s, it) => s + (it.price || 0), 0);
+  const computeReceiveTotal = () => receiveItems.reduce((s, it) => s + (Number(it.price) || 0), 0);
 
-  const filteredIngredients = (supplierName: string) => {
-    if (!supplierName) return ingredients;
-    return [...ingredients].sort((a, b) => {
-      const aMatch = a.supplier === supplierName ? 0 : 1;
-      const bMatch = b.supplier === supplierName ? 0 : 1;
-      return aMatch - bMatch || a.name.localeCompare(b.name);
-    });
+  const hasActiveFilters = filterSupplier || filterIngredient || filterStatus;
+
+  // ─── Searchable Ingredient Picker ───
+  const IngredientSearchPicker = ({ value, supplierName, onSelect, onClear }: {
+    value: string; supplierName: string;
+    onSelect: (ing: Ingredient) => void; onClear: () => void;
+  }) => {
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const selectedIng = ingredients.find(i => i.id === value);
+
+    // Sort: supplier match first, then alphabetical
+    const filtered = ingredients
+      .filter(i => {
+        if (!query) return true;
+        const q = query.toLowerCase();
+        return i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q) || (i.subcategory || '').toLowerCase().includes(q);
+      })
+      .sort((a, b) => {
+        const aMatch = a.supplier === supplierName ? 0 : 1;
+        const bMatch = b.supplier === supplierName ? 0 : 1;
+        return aMatch - bMatch || a.name.localeCompare(b.name);
+      })
+      .slice(0, 30);
+
+    useEffect(() => {
+      const handleClick = (e: MouseEvent) => {
+        if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+      };
+      document.addEventListener('mousedown', handleClick);
+      return () => document.removeEventListener('mousedown', handleClick);
+    }, []);
+
+    if (selectedIng) {
+      return (
+        <div className="ing-search-selected">
+          <span className="ing-search-selected-name">{selectedIng.name}</span>
+          {selectedIng.category && <span className="ing-search-selected-meta">{selectedIng.category}</span>}
+          {selectedIng.supplier && <span className="ing-search-selected-meta">{selectedIng.supplier}</span>}
+          <button type="button" className="btn-icon-sm" onClick={onClear}><X size={12} /></button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="ing-search-wrapper" ref={wrapperRef}>
+        <div className="ing-search-input-wrap">
+          <Search size={14} />
+          <input
+            className="input"
+            placeholder="Search ingredient..."
+            value={query}
+            onChange={e => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+          />
+        </div>
+        {open && (
+          <div className="ing-search-dropdown">
+            {filtered.length === 0 ? (
+              <div className="ing-search-empty">No ingredients found</div>
+            ) : (
+              filtered.map(ing => (
+                <div key={ing.id} className="ing-search-option" onClick={() => { onSelect(ing); setQuery(''); setOpen(false); }}>
+                  <strong>{ing.name}</strong>
+                  <span className="ing-search-option-meta">
+                    {ing.category && <span>{ing.category}</span>}
+                    {ing.subcategory && <span> &gt; {ing.subcategory}</span>}
+                    {ing.supplier && <span className="ing-search-option-supplier">{ing.supplier}</span>}
+                    {ing.unitPrice != null && <span className="ing-search-option-price">${ing.unitPrice}</span>}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderItemRows = (
     items: ItemRow[],
     update: (i: number, f: keyof ItemRow, v: string) => void,
-    selectIngredient: (i: number, ingredientId: string) => void,
     add: () => void,
     remove: (i: number) => void,
     supplierName: string,
     showStockFields: boolean,
   ) => {
-    const sortedIngredients = filteredIngredients(supplierName);
+    const selectIngredient = (idx: number, ing: Ingredient) => {
+      const copy = [...items];
+      copy[idx] = {
+        ...copy[idx],
+        ingredientId: ing.id,
+        name: ing.name,
+        unit: ing.purchaseUnit || ing.unit || '',
+        price: ing.unitPrice ? String(ing.unitPrice) : '',
+      };
+      if (items === createItems) setCreateItems(copy);
+      else setReceiveItems(copy);
+    };
+
+    const clearIngredient = (idx: number) => {
+      const copy = [...items];
+      copy[idx] = { ...EMPTY_ITEM };
+      if (items === createItems) setCreateItems(copy);
+      else setReceiveItems(copy);
+    };
+
     return (
       <div className="order-items-editor">
         {items.map((it, i) => (
           <div key={i} className="item-card">
             <div className="item-card-main">
-              <div className="item-card-select">
-                <select className="select" value={it.ingredientId}
-                  onChange={e => { if (e.target.value) selectIngredient(i, e.target.value); else { update(i, 'ingredientId', ''); update(i, 'name', ''); } }}>
-                  <option value="">Select ingredient...</option>
-                  {sortedIngredients.map(ing => (
-                    <option key={ing.id} value={ing.id}>{ing.name}{ing.supplier ? ` (${ing.supplier})` : ''}</option>
-                  ))}
-                </select>
-                {!it.ingredientId && (
-                  <input className="input" placeholder="Or type name..." value={it.name} onChange={e => update(i, 'name', e.target.value)} />
-                )}
-              </div>
+              <IngredientSearchPicker
+                value={it.ingredientId}
+                supplierName={supplierName}
+                onSelect={ing => selectIngredient(i, ing)}
+                onClear={() => clearIngredient(i)}
+              />
               <div className="item-card-fields">
                 <div className="item-field">
                   <label>Qty</label>
@@ -401,6 +480,7 @@ export default function Orders() {
               <span className="order-card-meta">
                 {order.restaurant.name} · {formatDate(order.orderDate)} · {order.items.length} item{order.items.length !== 1 ? 's' : ''}
                 {order.totalPaid != null && ` · $${order.totalPaid.toFixed(2)}`}
+                {order.deliveryType && ` · ${order.deliveryType}`}
               </span>
             </div>
           </div>
@@ -446,7 +526,6 @@ export default function Orders() {
             <div className="order-details-grid">
               {order.deliveryType && <div className="order-detail"><span className="detail-label">Delivery</span><span>{order.deliveryType}</span></div>}
               {order.totalPaid != null && <div className="order-detail"><span className="detail-label">Total Paid</span><span>${order.totalPaid.toFixed(2)} {order.currency}</span></div>}
-              {order.deliveredAt && <div className="order-detail"><span className="detail-label">Delivered</span><span>{formatDateTime(order.deliveredAt)}</span></div>}
               {order.receivedAt && <div className="order-detail"><span className="detail-label">Received</span><span>{formatDateTime(order.receivedAt)}</span></div>}
               {order.isPaid && order.paidAt && <div className="order-detail"><span className="detail-label">Paid</span><span>{formatDateTime(order.paidAt)}</span></div>}
               {order.notes && <div className="order-detail full"><span className="detail-label">Notes</span><span>{order.notes}</span></div>}
@@ -465,22 +544,13 @@ export default function Orders() {
 
             <div className="order-actions">
               {order.status === 'ORDERED' && (
-                <>
-                  <button className="btn btn-sm" style={{ background: '#5b9bd5', color: '#fff' }} onClick={() => markDelivered(order)}><Truck size={14} /> Mark Delivered</button>
-                  <button className="btn btn-primary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Receive</button>
-                </>
+                <button className="btn btn-primary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Receive Order</button>
               )}
-              {order.status === 'DELIVERED' && (
-                <button className="btn btn-primary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Receive</button>
-              )}
-              {order.status === 'RECEIVED' && (
-                <button className="btn btn-sm" style={{ background: '#7b68a8', color: '#fff' }} onClick={() => openStock(order)}><Warehouse size={14} /> Add to Stock</button>
+              {(order.status === 'RECEIVED' || order.status === 'STOCKED') && (
+                <button className="btn btn-secondary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Edit Details</button>
               )}
               <button className="btn btn-secondary btn-sm" onClick={() => openPhotos(order)}><Camera size={14} /> Photos</button>
-              {(order.status === 'ORDERED' || order.status === 'DELIVERED') && (
-                <button className="btn btn-secondary btn-sm" onClick={() => openReceive(order)}>Edit</button>
-              )}
-              {(order.status === 'ORDERED' || order.status === 'DELIVERED') && (
+              {order.status === 'ORDERED' && (
                 <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-danger)' }} onClick={() => markCancelled(order)}><XCircle size={14} /> Cancel</button>
               )}
               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--color-danger)' }} onClick={() => deleteOrder(order)}><Trash2 size={14} /></button>
@@ -503,6 +573,7 @@ export default function Orders() {
         </button>
       </div>
 
+      {/* ─── Filters ─── */}
       <div className="order-filters">
         {restaurants.length > 1 && (
           <select className="select" value={selectedRestaurant} onChange={e => setSelectedRestaurant(e.target.value)}>
@@ -510,20 +581,37 @@ export default function Orders() {
             {restaurants.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         )}
+        <select className="select" value={filterSupplier} onChange={e => setFilterSupplier(e.target.value)}>
+          <option value="">All Suppliers</option>
+          {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+        </select>
+        <select className="select" value={filterIngredient} onChange={e => setFilterIngredient(e.target.value)}>
+          <option value="">All Ingredients</option>
+          {ingredients.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+        </select>
+        <select className="select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <option value="">All Statuses</option>
+          {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        {hasActiveFilters && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setFilterSupplier(''); setFilterIngredient(''); setFilterStatus(''); }}>
+            <X size={14} /> Clear
+          </button>
+        )}
       </div>
 
       {expectedOrders.length === 0 && pastOrders.length === 0 ? (
         <div className="empty-state">
           <Package size={48} />
-          <h3>No orders yet</h3>
-          <p>Create your first ingredient order to get started.</p>
+          <h3>No orders {hasActiveFilters ? 'matching filters' : 'yet'}</h3>
+          <p>{hasActiveFilters ? 'Try adjusting your filters.' : 'Create your first ingredient order to get started.'}</p>
         </div>
       ) : (
         <>
           {expectedOrders.length === 0 ? (
             <div className="orders-section-empty">
               <CheckCircle size={24} />
-              <p>All caught up — no pending deliveries</p>
+              <p>All caught up — no pending orders</p>
             </div>
           ) : (
             <div className="orders-list">
@@ -562,23 +650,20 @@ export default function Orders() {
               <label className="label">Supplier</label>
               <select className="select" value={createSupplier} onChange={e => setCreateSupplier(e.target.value)}>
                 <option value="">Select supplier...</option>
-                {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                {suppliers.map(s => (
+                  <option key={s.id} value={s.name}>{s.name}{s.deliveryType ? ` (${s.deliveryType})` : ''}</option>
+                ))}
               </select>
             </div>
           </div>
-          <div className="form-group">
-            <label className="label">Delivery Type</label>
-            <select className="select" value={createDeliveryType} onChange={e => setCreateDeliveryType(e.target.value)}>
-              <option value="">Not specified</option>
-              <option value="Truck">Truck</option>
-              <option value="Pickup">Pickup</option>
-              <option value="Courier">Courier</option>
-              <option value="Walk-in">Walk-in</option>
-            </select>
-          </div>
+          {createSupplier && getSupplierDeliveryType(createSupplier) && (
+            <div className="delivery-type-info">
+              Delivery: <strong>{getSupplierDeliveryType(createSupplier)}</strong>
+            </div>
+          )}
 
           <label className="label" style={{ marginTop: 12 }}>Items</label>
-          {renderItemRows(createItems, updateCreateItem, selectIngredientForCreate, addCreateItem, removeCreateItem, createSupplier, false)}
+          {renderItemRows(createItems, updateCreateItem, addCreateItem, removeCreateItem, createSupplier, false)}
 
           <div className="form-group" style={{ marginTop: 12 }}>
             <label className="label">Notes</label>
@@ -591,101 +676,96 @@ export default function Orders() {
         </form>
       </Modal>
 
-      {/* ─── Receive / Edit Order Modal ─── */}
-      <Modal isOpen={!!showReceive} onClose={() => setShowReceive(null)} title={showReceive ? `${showReceive.status === 'ORDERED' || showReceive.status === 'DELIVERED' ? 'Receive' : 'Edit'} Order — ${showReceive.supplier || 'Order'}` : ''} width="600px">
+      {/* ─── Receive / Edit Order Modal (unified) ─── */}
+      <Modal isOpen={!!showReceive} onClose={() => setShowReceive(null)} title={showReceive ? `${showReceive.status === 'ORDERED' ? 'Receive' : 'Edit'} Order — ${showReceive.supplier || 'Order'}` : ''} width="650px">
         {showReceive && (
-          <form onSubmit={e => e.preventDefault()}>
+          <form onSubmit={handleReceive}>
             {receiveError && <div className="order-error">{receiveError}</div>}
-            <div className="form-row">
-              <div className="form-group">
-                <label className="label">Total Paid</label>
-                <input className="input" type="number" step="0.01" value={receiveTotalPaid} onChange={e => setReceiveTotalPaid(e.target.value)} placeholder="0.00" />
-              </div>
-              <div className="form-group">
-                <label className="label">Currency</label>
-                <select className="select" value={receiveCurrency} onChange={e => setReceiveCurrency(e.target.value)}>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="LBP">LBP</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="label">Delivery Type</label>
-                <select className="select" value={receiveDeliveryType} onChange={e => setReceiveDeliveryType(e.target.value)}>
-                  <option value="">Not specified</option>
-                  <option value="Truck">Truck</option>
-                  <option value="Pickup">Pickup</option>
-                  <option value="Courier">Courier</option>
-                  <option value="Walk-in">Walk-in</option>
-                </select>
+
+            {/* Payment section */}
+            <div className="receive-section">
+              <h4 className="receive-section-title"><DollarSign size={14} /> Payment</h4>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="label">Total Price</label>
+                  <input className="input" type="number" step="0.01" value={receiveTotalPaid} onChange={e => setReceiveTotalPaid(e.target.value)} placeholder={String(computeReceiveTotal()) || '0.00'} />
+                </div>
+                <div className="form-group">
+                  <label className="label">Currency</label>
+                  <select className="select" value={receiveCurrency} onChange={e => setReceiveCurrency(e.target.value)}>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="LBP">LBP</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="label">Status</label>
+                  <div className="receive-paid-toggle">
+                    <button type="button" className={`paid-toggle-btn ${receiveIsPaid ? 'active paid' : ''}`} onClick={() => setReceiveIsPaid(true)}>
+                      <Check size={12} /> Paid
+                    </button>
+                    <button type="button" className={`paid-toggle-btn ${!receiveIsPaid ? 'active unpaid' : ''}`} onClick={() => setReceiveIsPaid(false)}>
+                      <Clock size={12} /> Pay Later
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <label className="label" style={{ marginTop: 12 }}>Items</label>
-            {renderItemRows(receiveItems, updateReceiveItem, selectIngredientForReceive, addReceiveItem, removeReceiveItem, showReceive.supplier || '', true)}
+            {/* Items section with stock fields */}
+            <div className="receive-section">
+              <h4 className="receive-section-title"><Package size={14} /> Items — Verify & Stock</h4>
+              {renderItemRows(receiveItems, updateReceiveItem, addReceiveItem, removeReceiveItem, showReceive.supplier || '', true)}
+            </div>
+
+            {/* Photos section inline */}
+            <div className="receive-section">
+              <h4 className="receive-section-title"><Camera size={14} /> Photos</h4>
+              <div className="photo-upload-area compact">
+                <div className="photo-upload-controls">
+                  <select className="select" value={receivePhotoType} onChange={e => setReceivePhotoType(e.target.value)} style={{ width: 130 }}>
+                    <option value="INVOICE">Invoice</option>
+                    <option value="INGREDIENT">Ingredient</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => receiveFileRef.current?.click()} disabled={receiveUploadingPhotos}>
+                    <Upload size={14} /> {receiveUploadingPhotos ? 'Uploading...' : 'Upload'}
+                  </button>
+                  <input ref={receiveFileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+                    onChange={e => handlePhotoUpload(e.target.files, showReceive!.id, receivePhotoType, setReceiveUploadingPhotos, receiveFileRef)} />
+                </div>
+              </div>
+              {showReceive.photos.length > 0 && (
+                <div className="order-photos-preview" style={{ marginTop: 8 }}>
+                  {showReceive.photos.map(p => (
+                    <div key={p.id} className="photo-thumb" style={{ position: 'relative' }}>
+                      <img src={p.url} alt="" onClick={() => setPhotoPreview(p.url)} />
+                      <span className={`photo-type-tag ${p.type.toLowerCase()}`}>{p.type === 'INVOICE' ? 'Inv' : 'Pic'}</span>
+                      <button type="button" className="photo-thumb-delete" onClick={() => deletePhoto(p.id, showReceive!.id)}><X size={10} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="form-group" style={{ marginTop: 12 }}>
               <label className="label">Notes</label>
-              <textarea className="textarea" rows={2} value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)} placeholder="Delivery notes..." />
+              <textarea className="textarea" rows={2} value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)} placeholder="Notes..." />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setShowReceive(null)}>Cancel</button>
-              {(showReceive.status === 'ORDERED' || showReceive.status === 'DELIVERED') && (
-                <button type="button" className="btn btn-sm" style={{ background: '#5b9bd5', color: '#fff' }}
-                  onClick={e => handleReceive(e as any, 'DELIVERED')}>
-                  <Truck size={14} /> Save as Delivered
+              {(showReceive.status === 'RECEIVED' || showReceive.status === 'STOCKED') ? (
+                <button type="button" className="btn btn-primary" onClick={handleSaveReceiveEdits}>
+                  <Check size={14} /> Save Changes
+                </button>
+              ) : (
+                <button type="submit" className="btn btn-primary">
+                  <CheckCircle size={14} /> Receive & Stock
                 </button>
               )}
-              <button type="button" className="btn btn-primary"
-                onClick={e => handleReceive(e as any, 'RECEIVED')}>
-                <CheckCircle size={14} /> {showReceive.status === 'RECEIVED' || showReceive.status === 'STOCKED' ? 'Save Changes' : 'Mark Received'}
-              </button>
             </div>
           </form>
-        )}
-      </Modal>
-
-      {/* ─── Add to Stock Modal ─── */}
-      <Modal isOpen={!!showStock} onClose={() => setShowStock(null)} title={showStock ? `Add to Stock — ${showStock.supplier || 'Order'}` : ''} width="600px">
-        {showStock && (
-          <div>
-            {stockError && <div className="order-error">{stockError}</div>}
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 16 }}>
-              Assign storage locations and expiry dates for each item, then mark as stocked.
-            </p>
-            <div className="stock-items">
-              {stockItems.map((it, i) => (
-                <div key={i} className="stock-item-row">
-                  <div className="stock-item-name">
-                    <strong>{it.name}</strong>
-                    <span>{it.quantity} {it.unit}</span>
-                  </div>
-                  <div className="stock-item-fields">
-                    <div className="item-field" style={{ flex: 2 }}>
-                      <label>Storage Location</label>
-                      <select className="select" value={it.storageLocation}
-                        onChange={e => { const copy = [...stockItems]; copy[i] = { ...copy[i], storageLocation: e.target.value }; setStockItems(copy); }}>
-                        <option value="">Select...</option>
-                        {storageLocations.map(sl => <option key={sl.id} value={sl.name}>{sl.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="item-field">
-                      <label>Expiry Date</label>
-                      <input className="input" type="date" value={it.expiryDate}
-                        onChange={e => { const copy = [...stockItems]; copy[i] = { ...copy[i], expiryDate: e.target.value }; setStockItems(copy); }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setShowStock(null)}>Cancel</button>
-              <button type="button" className="btn btn-sm" style={{ background: '#7b68a8', color: '#fff' }} onClick={handleStock}>
-                <Warehouse size={14} /> Mark as Stocked
-              </button>
-            </div>
-          </div>
         )}
       </Modal>
 
@@ -703,7 +783,8 @@ export default function Orders() {
                 <button type="button" className="btn btn-primary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={uploadingPhotos}>
                   <Upload size={14} /> {uploadingPhotos ? 'Uploading...' : 'Upload Photos'}
                 </button>
-                <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => handlePhotoUpload(e.target.files)} />
+                <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+                  onChange={e => handlePhotoUpload(e.target.files, showPhotos!.id, photoType, setUploadingPhotos, fileInputRef)} />
               </div>
               <p className="photo-upload-hint">Select type, then upload. Multiple files OK.</p>
             </div>
@@ -724,7 +805,7 @@ export default function Orders() {
                         {p.type === 'INVOICE' ? <FileText size={10} /> : <ImageIcon size={10} />}
                         {p.type === 'INVOICE' ? 'Invoice' : p.type === 'INGREDIENT' ? 'Photo' : 'Other'}
                       </span>
-                      <button className="btn-icon-sm" onClick={() => deletePhoto(p.id)}><Trash2 size={12} /></button>
+                      <button className="btn-icon-sm" onClick={() => deletePhoto(p.id, showPhotos!.id)}><Trash2 size={12} /></button>
                     </div>
                   </div>
                 ))}
