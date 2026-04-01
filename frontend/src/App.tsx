@@ -12,6 +12,7 @@ import ScheduleDetail from './pages/ScheduleDetail';
 import Salaries from './pages/Salaries';
 import PublicSchedule from './pages/PublicSchedule';
 import Orders from './pages/Orders';
+import Settings from './pages/Settings';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="scheduling/:id" element={<ScheduleDetail />} />
           <Route path="scheduling/salaries/:restaurantId" element={<Salaries />} />
           <Route path="orders" element={<Orders />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

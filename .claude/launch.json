@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:frontend"],
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["/Users/anthonybechay/development/byhadmade/.claude/run-frontend.sh"],
       "port": 5173,
       "env": {
         "DATABASE_URL": "postgresql://byhadmade:byhadmade_secret@localhost:5433/byhadmade",

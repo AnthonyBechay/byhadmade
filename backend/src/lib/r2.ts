@@ -17,9 +17,14 @@ export async function uploadToR2(
   buffer: Buffer,
   mimeType: string,
   folder: string,
-  ext: string
+  ext: string,
+  context?: { entityId?: string; label?: string }
 ): Promise<string> {
-  const key = `${folder}/${crypto.randomUUID()}${ext}`;
+  const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+/, '');
+  const label = context?.label ? `${context.label}_` : '';
+  const entityPart = context?.entityId ? `${context.entityId}/` : '';
+  const shortId = crypto.randomUUID().slice(0, 8);
+  const key = `${folder}/${entityPart}${label}${ts}_${shortId}${ext}`;
   await s3.send(
     new PutObjectCommand({
       Bucket: BUCKET,

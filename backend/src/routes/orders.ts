@@ -38,7 +38,7 @@ router.get('/', async (req: AuthRequest, res) => {
       where,
       include: {
         restaurant: { select: { id: true, name: true } },
-        items: true,
+        items: { include: { ingredient: { select: { id: true, name: true, unit: true, purchaseUnit: true, unitPrice: true, supplier: true } } } },
         photos: true,
       },
       orderBy: { orderDate: 'desc' },
@@ -57,7 +57,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
       where: { id, restaurant: { userId: req.userId! } },
       include: {
         restaurant: { select: { id: true, name: true } },
-        items: true,
+        items: { include: { ingredient: { select: { id: true, name: true, unit: true, purchaseUnit: true, unitPrice: true, supplier: true } } } },
         photos: { orderBy: { createdAt: 'asc' as const } },
       },
     });
@@ -86,6 +86,7 @@ router.post('/', async (req: AuthRequest, res) => {
         orderDate: orderDate ? new Date(orderDate) : new Date(),
         items: {
           create: items.map((it: any) => ({
+            ingredientId: it.ingredientId || null,
             name: it.name,
             quantity: it.quantity ? parseFloat(it.quantity) : null,
             unit: it.unit || null,
@@ -94,7 +95,7 @@ router.post('/', async (req: AuthRequest, res) => {
           })),
         },
       },
-      include: { items: true, photos: true, restaurant: { select: { id: true, name: true } } },
+      include: { items: { include: { ingredient: { select: { id: true, name: true, unit: true, purchaseUnit: true, unitPrice: true, supplier: true } } } }, photos: true, restaurant: { select: { id: true, name: true } } },
     });
     res.status(201).json(order);
   } catch (error) {
@@ -111,13 +112,17 @@ router.put('/:id', async (req: AuthRequest, res) => {
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
 
-    const { status, deliveryType, totalPaid, currency, supplier, notes, items } = req.body;
+    const { status, deliveryType, totalPaid, currency, supplier, notes, items, isPaid } = req.body;
 
     const data: any = {};
     if (status !== undefined) {
       data.status = status;
       if (status === 'DELIVERED' && !order.deliveredAt) data.deliveredAt = new Date();
       if (status === 'RECEIVED' && !order.receivedAt) data.receivedAt = new Date();
+    }
+    if (isPaid !== undefined) {
+      data.isPaid = !!isPaid;
+      data.paidAt = isPaid ? new Date() : null;
     }
     if (deliveryType !== undefined) data.deliveryType = deliveryType || null;
     if (totalPaid !== undefined) data.totalPaid = totalPaid ? parseFloat(totalPaid) : null;
@@ -130,11 +135,14 @@ router.put('/:id', async (req: AuthRequest, res) => {
       await prisma.orderItem.deleteMany({ where: { orderId: order.id } });
       data.items = {
         create: items.map((it: any) => ({
+          ingredientId: it.ingredientId || null,
           name: it.name,
           quantity: it.quantity ? parseFloat(it.quantity) : null,
           unit: it.unit || null,
           price: it.price ? parseFloat(it.price) : null,
           notes: it.notes || null,
+          expiryDate: it.expiryDate ? new Date(it.expiryDate) : null,
+          storageLocation: it.storageLocation || null,
         })),
       };
     }
@@ -142,7 +150,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
     const updated = await prisma.order.update({
       where: { id: order.id },
       data,
-      include: { items: true, photos: true, restaurant: { select: { id: true, name: true } } },
+      include: { items: { include: { ingredient: { select: { id: true, name: true, unit: true, purchaseUnit: true, unitPrice: true, supplier: true } } } }, photos: true, restaurant: { select: { id: true, name: true } } },
     });
     res.json(updated);
   } catch (error) {
@@ -190,7 +198,10 @@ router.post('/:id/photos', upload.array('photos', 10), async (req: AuthRequest, 
     const created = [];
     for (const file of files) {
       const ext = path.extname(file.originalname) || '.jpg';
-      const url = await uploadToR2(file.buffer, file.mimetype, 'orders', ext);
+      const url = await uploadToR2(file.buffer, file.mimetype, 'orders', ext, {
+        entityId: order.id,
+        label: photoType.toLowerCase(),
+      });
       const photo = await prisma.orderPhoto.create({
         data: {
           orderId: order.id,

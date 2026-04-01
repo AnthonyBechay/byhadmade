@@ -32,6 +32,9 @@ pnpm dev:frontend
 
 ## Critical Rules
 
+### Git
+- **NEVER commit or push** — the user handles all git operations (commit, push, deploy)
+
 ### Prisma Migrations
 - **NEVER modify existing migration files** — always create new migrations
 - Use `npx prisma migrate dev --name descriptive_name` for schema changes

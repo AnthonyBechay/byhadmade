@@ -17,6 +17,8 @@ model User {
   recipes      Recipe[]
   menus        Menu[]
   restaurants  Restaurant[]
+  suppliers         Supplier[]
+  storageLocations  StorageLocation[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 }
@@ -50,14 +52,50 @@ model Subcategory {
   @@unique([name, categoryId])
 }
 
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  email     String?
+  notes     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, userId])
+}
+
+model StorageLocation {
+  id        String   @id @default(cuid())
+  name      String
+  notes     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, userId])
+}
+
 model Ingredient {
   id               String             @id @default(cuid())
   name             String
   unit             String?
   category         String?
+  subcategory      String?
+  tag              String?
+  supplier         String?            // supplier name (free text for flexibility)
+  purchaseUnit     String?            // how it's bought: kg, box, case, etc.
+  purchaseQty      Float?             // qty per purchase unit (e.g. 10kg per box)
+  unitPrice        Float?             // price per purchase unit
+  currency         String?            @default("USD")
+  minStock         Float?             // minimum stock level
+  notes            String?
   userId           String
   user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   recipeIngredients RecipeIngredient[]
+  orderItems       OrderItem[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -230,6 +268,8 @@ model Order {
   currency       String       @default("USD")
   supplier       String?
   notes          String?
+  isPaid         Boolean      @default(false)
+  paidAt         DateTime?
   orderDate      DateTime     @default(now())
   deliveredAt    DateTime?
   receivedAt     DateTime?
@@ -240,14 +280,18 @@ model Order {
 }
 
 model OrderItem {
-  id        String  @id @default(cuid())
-  orderId   String
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  name      String  // ingredient name (free text)
-  quantity  Float?
-  unit      String? // kg, pcs, liters, etc.
-  price     Float?
-  notes     String?
+  id           String      @id @default(cuid())
+  orderId      String
+  order        Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ingredientId String?
+  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+  name            String      // display name (copied from ingredient or free text)
+  quantity        Float?
+  unit            String?     // kg, pcs, liters, etc.
+  price           Float?
+  notes           String?
+  expiryDate      DateTime?
+  storageLocation String?
 }
 
 model OrderPhoto {
@@ -264,6 +308,7 @@ enum OrderStatus {
   ORDERED
   DELIVERED
   RECEIVED
+  STOCKED
   CANCELLED
 }
 
