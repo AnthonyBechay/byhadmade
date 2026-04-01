@@ -145,6 +145,7 @@ model Restaurant {
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   employees  Employee[]
   schedules  Schedule[]
+  orders     Order[]
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 }
@@ -215,4 +216,59 @@ enum ShiftType {
   DAY_OFF
   SICK
   VACATION
+}
+
+// ─── Ingredient Orders ───
+
+model Order {
+  id             String       @id @default(cuid())
+  restaurantId   String
+  restaurant     Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  status         OrderStatus  @default(ORDERED)
+  deliveryType   String?      // e.g. "Truck", "Pickup", "Courier"
+  totalPaid      Float?
+  currency       String       @default("USD")
+  supplier       String?
+  notes          String?
+  orderDate      DateTime     @default(now())
+  deliveredAt    DateTime?
+  receivedAt     DateTime?
+  items          OrderItem[]
+  photos         OrderPhoto[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  name      String  // ingredient name (free text)
+  quantity  Float?
+  unit      String? // kg, pcs, liters, etc.
+  price     Float?
+  notes     String?
+}
+
+model OrderPhoto {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  url       String
+  type      PhotoType @default(INGREDIENT)
+  caption   String?
+  createdAt DateTime @default(now())
+}
+
+enum OrderStatus {
+  ORDERED
+  DELIVERED
+  RECEIVED
+  CANCELLED
+}
+
+enum PhotoType {
+  INVOICE
+  INGREDIENT
+  OTHER
 }

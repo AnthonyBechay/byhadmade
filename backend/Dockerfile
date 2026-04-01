@@ -34,12 +34,6 @@ RUN mkdir -p uploads
 
 EXPOSE 3001
 
-CMD npx prisma migrate resolve --applied 20260328121735_init --schema=prisma/schema.prisma 2>/dev/null; \
-    npx prisma migrate resolve --applied 20260328123847_enhance_scheduling --schema=prisma/schema.prisma 2>/dev/null; \
-    npx prisma migrate resolve --applied 20260328135732_add_user_scoping --schema=prisma/schema.prisma 2>/dev/null; \
-    npx prisma migrate resolve --applied 20260328150000_add_restaurant_share_token --schema=prisma/schema.prisma 2>/dev/null; \
-    npx prisma migrate resolve --applied 20260328160000_add_restaurant_details --schema=prisma/schema.prisma 2>/dev/null; \
-    npx prisma migrate resolve --applied 20260328200000_add_user_scoping --schema=prisma/schema.prisma 2>/dev/null; \
-    npx prisma migrate deploy --schema=prisma/schema.prisma && \
+CMD npx prisma migrate deploy --schema=prisma/schema.prisma && \
     node prisma/seed.js && \
     node dist/index.js

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ChefHat, UtensilsCrossed, Salad, CalendarDays, LogOut } from 'lucide-react';
+import { LayoutDashboard, ChefHat, UtensilsCrossed, Salad, CalendarDays, Package, LogOut } from 'lucide-react';
 import './Layout.css';
 
 const navItems = [
@@ -8,6 +8,7 @@ const navItems = [
   { to: '/app/ingredients', icon: Salad, label: 'Ingredients' },
   { to: '/app/menus', icon: UtensilsCrossed, label: 'Menus' },
   { to: '/app/scheduling', icon: CalendarDays, label: 'Scheduling' },
+  { to: '/app/orders', icon: Package, label: 'Orders' },
 ];
 
 export default function Layout() {

@@ -11,6 +11,7 @@ import menuRoutes from './routes/menus';
 import restaurantRoutes from './routes/restaurants';
 import employeeRoutes from './routes/employees';
 import scheduleRoutes from './routes/schedules';
+import orderRoutes from './routes/orders';
 
 const prisma = new PrismaClient();
 
@@ -32,6 +33,7 @@ app.use('/api/menus', menuRoutes);
 app.use('/api/restaurants', restaurantRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/schedules', scheduleRoutes);
+app.use('/api/orders', orderRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
