@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import {
   Package, Plus, Trash2, Check, X, Camera, Upload, ChevronDown, ChevronRight,
   Clock, CheckCircle, XCircle, FileText, Image as ImageIcon, DollarSign, Warehouse,
-  Search, Filter
+  Search, Edit3
 } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
@@ -41,11 +41,15 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
 
 interface ItemRow {
   ingredientId: string; name: string; quantity: string; unit: string;
-  price: string; notes: string; expiryDate: string; storageLocation: string;
+  unitPrice: string; notes: string; expiryDate: string; storageLocation: string;
 }
-const EMPTY_ITEM: ItemRow = { ingredientId: '', name: '', quantity: '', unit: '', price: '', notes: '', expiryDate: '', storageLocation: '' };
+const EMPTY_ITEM: ItemRow = { ingredientId: '', name: '', quantity: '', unit: '', unitPrice: '', notes: '', expiryDate: '', storageLocation: '' };
 
 const UNITS = ['kg', 'g', 'lb', 'pcs', 'box', 'bag', 'case', 'L', 'mL', 'dozen', 'bunch', 'can', 'bottle'];
+
+// Line total = unitPrice × quantity
+const lineTotal = (it: ItemRow) => (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0);
+const lineTotalData = (it: OrderItemData) => (it.price || 0) * (it.quantity || 0);
 
 export default function Orders() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -57,9 +61,11 @@ export default function Orders() {
   const [showCreate, setShowCreate] = useState(false);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [showReceive, setShowReceive] = useState<Order | null>(null);
+  const [showEdit, setShowEdit] = useState<Order | null>(null);
   const [showPhotos, setShowPhotos] = useState<Order | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [showReceived, setShowReceived] = useState(false);
+  const [showAllPast, setShowAllPast] = useState(false);
 
   // Filters
   const [filterSupplier, setFilterSupplier] = useState('');
@@ -72,6 +78,12 @@ export default function Orders() {
   const [createNotes, setCreateNotes] = useState('');
   const [createItems, setCreateItems] = useState<ItemRow[]>([{ ...EMPTY_ITEM }]);
   const [createError, setCreateError] = useState('');
+
+  // Edit form (for ORDERED orders)
+  const [editSupplier, setEditSupplier] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editItems, setEditItems] = useState<ItemRow[]>([]);
+  const [editError, setEditError] = useState('');
 
   // Receive form — everything in one modal
   const [receiveTotalPaid, setReceiveTotalPaid] = useState('');
@@ -118,12 +130,25 @@ export default function Orders() {
 
   const filteredOrders = applyFilters(orders);
   const expectedOrders = filteredOrders.filter(o => o.status === 'ORDERED');
-  const pastOrders = filteredOrders.filter(o => o.status === 'RECEIVED' || o.status === 'STOCKED' || o.status === 'CANCELLED');
+  const allPastOrders = filteredOrders.filter(o => o.status === 'RECEIVED' || o.status === 'STOCKED' || o.status === 'CANCELLED');
+
+  // Past orders: last 30 days by default, show all on demand
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const recentPastOrders = allPastOrders.filter(o => new Date(o.orderDate) >= thirtyDaysAgo);
+  const pastOrders = showAllPast ? allPastOrders : recentPastOrders;
+  const hasOlderOrders = allPastOrders.length > recentPastOrders.length;
 
   // Get the supplier's delivery type
   const getSupplierDeliveryType = (supplierName: string) => {
     const s = suppliers.find(sup => sup.name === supplierName);
     return s?.deliveryType || null;
+  };
+
+  // Get ingredients filtered by supplier
+  const getSupplierIngredients = (supplierName: string) => {
+    if (!supplierName) return ingredients;
+    return ingredients.filter(i => i.supplier === supplierName);
   };
 
   // ─── Create Order ───
@@ -141,7 +166,8 @@ export default function Orders() {
         notes: createNotes,
         items: validItems.map(it => ({
           ingredientId: it.ingredientId || null,
-          name: it.name, quantity: it.quantity, unit: it.unit, price: it.price, notes: it.notes,
+          name: it.name, quantity: it.quantity, unit: it.unit,
+          price: it.unitPrice, notes: it.notes,
         })),
       });
       setShowCreate(false);
@@ -164,6 +190,52 @@ export default function Orders() {
   const addCreateItem = () => setCreateItems([...createItems, { ...EMPTY_ITEM }]);
   const removeCreateItem = (idx: number) => setCreateItems(createItems.filter((_, i) => i !== idx));
 
+  // ─── Edit Order (ORDERED status) ───
+  const openEdit = (order: Order) => {
+    setShowEdit(order);
+    setEditSupplier(order.supplier || '');
+    setEditNotes(order.notes || '');
+    setEditItems(order.items.map(it => ({
+      ingredientId: it.ingredientId || '', name: it.name,
+      quantity: it.quantity ? String(it.quantity) : '', unit: it.unit || '',
+      unitPrice: it.price ? String(it.price) : '', notes: it.notes || '',
+      expiryDate: '', storageLocation: '',
+    })));
+    setEditError('');
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEdit) return;
+    setEditError('');
+    const validItems = editItems.filter(it => it.ingredientId);
+    if (!validItems.length) { setEditError('Add at least one ingredient'); return; }
+    const deliveryType = getSupplierDeliveryType(editSupplier);
+    try {
+      await api.put(`/orders/${showEdit.id}`, {
+        supplier: editSupplier,
+        deliveryType,
+        notes: editNotes,
+        items: validItems.map(it => ({
+          ingredientId: it.ingredientId || null,
+          name: it.name, quantity: it.quantity, unit: it.unit,
+          price: it.unitPrice, notes: it.notes,
+        })),
+      });
+      setShowEdit(null);
+      loadOrders();
+    } catch (err: any) { setEditError(err.message); }
+  };
+
+  const updateEditItem = (idx: number, field: keyof ItemRow, value: string) => {
+    const copy = [...editItems];
+    copy[idx] = { ...copy[idx], [field]: value };
+    setEditItems(copy);
+  };
+
+  const addEditItem = () => setEditItems([...editItems, { ...EMPTY_ITEM }]);
+  const removeEditItem = (idx: number) => setEditItems(editItems.filter((_, i) => i !== idx));
+
   // ─── Receive Order (unified modal) ───
   const openReceive = (order: Order) => {
     setShowReceive(order);
@@ -174,31 +246,35 @@ export default function Orders() {
     setReceiveItems(order.items.map(it => ({
       ingredientId: it.ingredientId || '', name: it.name,
       quantity: it.quantity ? String(it.quantity) : '', unit: it.unit || '',
-      price: it.price ? String(it.price) : '', notes: it.notes || '',
+      unitPrice: it.price ? String(it.price) : '', notes: it.notes || '',
       expiryDate: it.expiryDate ? it.expiryDate.slice(0, 10) : '',
       storageLocation: it.storageLocation || '',
     })));
     setReceiveError('');
   };
 
-  const handleReceive = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const buildReceivePayload = (targetStatus: string) => {
+    const validItems = receiveItems.filter(it => it.name.trim());
+    return {
+      status: targetStatus,
+      isPaid: receiveIsPaid,
+      totalPaid: receiveTotalPaid, currency: receiveCurrency,
+      notes: receiveNotes,
+      items: validItems.map(it => ({
+        ingredientId: it.ingredientId || null, name: it.name,
+        quantity: it.quantity, unit: it.unit, price: it.unitPrice, notes: it.notes,
+        expiryDate: it.expiryDate || null, storageLocation: it.storageLocation || null,
+      })),
+    };
+  };
+
+  const handleReceive = async (targetStatus: string) => {
     if (!showReceive) return;
     setReceiveError('');
     const validItems = receiveItems.filter(it => it.name.trim());
     if (!validItems.length) { setReceiveError('At least one item required'); return; }
     try {
-      await api.put(`/orders/${showReceive.id}`, {
-        status: 'RECEIVED',
-        isPaid: receiveIsPaid,
-        totalPaid: receiveTotalPaid, currency: receiveCurrency,
-        notes: receiveNotes,
-        items: validItems.map(it => ({
-          ingredientId: it.ingredientId || null, name: it.name,
-          quantity: it.quantity, unit: it.unit, price: it.price, notes: it.notes,
-          expiryDate: it.expiryDate || null, storageLocation: it.storageLocation || null,
-        })),
-      });
+      await api.put(`/orders/${showReceive.id}`, buildReceivePayload(targetStatus));
       setShowReceive(null);
       loadOrders();
     } catch (err: any) { setReceiveError(err.message); }
@@ -215,7 +291,7 @@ export default function Orders() {
         notes: receiveNotes,
         items: validItems.map(it => ({
           ingredientId: it.ingredientId || null, name: it.name,
-          quantity: it.quantity, unit: it.unit, price: it.price, notes: it.notes,
+          quantity: it.quantity, unit: it.unit, price: it.unitPrice, notes: it.notes,
           expiryDate: it.expiryDate || null, storageLocation: it.storageLocation || null,
         })),
       });
@@ -264,7 +340,6 @@ export default function Orders() {
     try {
       await api.uploadFiles(`/orders/${orderId}/photos`, Array.from(files), 'photos', { type });
       loadOrders();
-      // Refresh the modal order if open
       const updated = await api.get(`/orders/${orderId}`);
       if (showPhotos?.id === orderId) setShowPhotos(updated);
       if (showReceive?.id === orderId) setShowReceive(updated);
@@ -287,8 +362,8 @@ export default function Orders() {
   // ─── Helpers ───
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const formatDateTime = (d: string) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const itemsTotal = (items: OrderItemData[]) => items.reduce((s, it) => s + (it.price || 0), 0);
-  const computeReceiveTotal = () => receiveItems.reduce((s, it) => s + (Number(it.price) || 0), 0);
+  const itemsTotal = (items: OrderItemData[]) => items.reduce((s, it) => s + lineTotalData(it), 0);
+  const computeReceiveTotal = () => receiveItems.reduce((s, it) => s + lineTotal(it), 0);
 
   const hasActiveFilters = filterSupplier || filterIngredient || filterStatus;
 
@@ -302,18 +377,15 @@ export default function Orders() {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const selectedIng = ingredients.find(i => i.id === value);
 
-    // Sort: supplier match first, then alphabetical
-    const filtered = ingredients
+    // Only show ingredients from the selected supplier
+    const supplierIngs = getSupplierIngredients(supplierName);
+    const filtered = supplierIngs
       .filter(i => {
         if (!query) return true;
         const q = query.toLowerCase();
         return i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q) || (i.subcategory || '').toLowerCase().includes(q);
       })
-      .sort((a, b) => {
-        const aMatch = a.supplier === supplierName ? 0 : 1;
-        const bMatch = b.supplier === supplierName ? 0 : 1;
-        return aMatch - bMatch || a.name.localeCompare(b.name);
-      })
+      .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 30);
 
     useEffect(() => {
@@ -341,16 +413,17 @@ export default function Orders() {
           <Search size={14} />
           <input
             className="input"
-            placeholder="Search ingredient..."
+            placeholder={supplierName ? `Search ${supplierName} ingredients...` : 'Select a supplier first...'}
             value={query}
             onChange={e => { setQuery(e.target.value); setOpen(true); }}
             onFocus={() => setOpen(true)}
+            disabled={!supplierName}
           />
         </div>
-        {open && (
+        {open && supplierName && (
           <div className="ing-search-dropdown">
             {filtered.length === 0 ? (
-              <div className="ing-search-empty">No ingredients found</div>
+              <div className="ing-search-empty">No ingredients found for {supplierName}</div>
             ) : (
               filtered.map(ing => (
                 <div key={ing.id} className="ing-search-option" onClick={() => { onSelect(ing); setQuery(''); setOpen(false); }}>
@@ -358,8 +431,7 @@ export default function Orders() {
                   <span className="ing-search-option-meta">
                     {ing.category && <span>{ing.category}</span>}
                     {ing.subcategory && <span> &gt; {ing.subcategory}</span>}
-                    {ing.supplier && <span className="ing-search-option-supplier">{ing.supplier}</span>}
-                    {ing.unitPrice != null && <span className="ing-search-option-price">${ing.unitPrice}</span>}
+                    {ing.unitPrice != null && <span className="ing-search-option-price">${ing.unitPrice}/{ing.purchaseUnit || ing.unit || 'unit'}</span>}
                   </span>
                 </div>
               ))
@@ -377,6 +449,7 @@ export default function Orders() {
     remove: (i: number) => void,
     supplierName: string,
     showStockFields: boolean,
+    listSetter: 'create' | 'edit' | 'receive',
   ) => {
     const selectIngredient = (idx: number, ing: Ingredient) => {
       const copy = [...items];
@@ -385,16 +458,18 @@ export default function Orders() {
         ingredientId: ing.id,
         name: ing.name,
         unit: ing.purchaseUnit || ing.unit || '',
-        price: ing.unitPrice ? String(ing.unitPrice) : '',
+        unitPrice: ing.unitPrice ? String(ing.unitPrice) : '',
       };
-      if (items === createItems) setCreateItems(copy);
+      if (listSetter === 'create') setCreateItems(copy);
+      else if (listSetter === 'edit') setEditItems(copy);
       else setReceiveItems(copy);
     };
 
     const clearIngredient = (idx: number) => {
       const copy = [...items];
       copy[idx] = { ...EMPTY_ITEM };
-      if (items === createItems) setCreateItems(copy);
+      if (listSetter === 'create') setCreateItems(copy);
+      else if (listSetter === 'edit') setEditItems(copy);
       else setReceiveItems(copy);
     };
 
@@ -422,8 +497,12 @@ export default function Orders() {
                   </select>
                 </div>
                 <div className="item-field">
-                  <label>Price</label>
-                  <input className="input" type="number" step="0.01" placeholder="$" value={it.price} onChange={e => update(i, 'price', e.target.value)} />
+                  <label>Price/{it.unit || 'unit'}</label>
+                  <input className="input" type="number" step="0.01" placeholder="$" value={it.unitPrice} onChange={e => update(i, 'unitPrice', e.target.value)} />
+                </div>
+                <div className="item-field item-field-total">
+                  <label>Total</label>
+                  <span className="item-total-value">${lineTotal(it).toFixed(2)}</span>
                 </div>
               </div>
               {showStockFields && (
@@ -457,6 +536,7 @@ export default function Orders() {
     const isExpanded = expandedOrder === order.id;
     const StatusIcon = cfg.icon;
     const showStockInfo = order.status === 'RECEIVED' || order.status === 'STOCKED';
+    const total = itemsTotal(order.items);
 
     return (
       <div key={order.id} className={`order-card ${order.status.toLowerCase()}`}>
@@ -479,7 +559,7 @@ export default function Orders() {
               <strong>{order.supplier || 'No supplier'}</strong>
               <span className="order-card-meta">
                 {order.restaurant.name} · {formatDate(order.orderDate)} · {order.items.length} item{order.items.length !== 1 ? 's' : ''}
-                {order.totalPaid != null && ` · $${order.totalPaid.toFixed(2)}`}
+                {total > 0 && ` · $${total.toFixed(2)}`}
                 {order.deliveryType && ` · ${order.deliveryType}`}
               </span>
             </div>
@@ -499,7 +579,8 @@ export default function Orders() {
                 <span style={{ flex: 2 }}>Item</span>
                 <span>Qty</span>
                 <span>Unit</span>
-                <span>Price</span>
+                <span>Price/Unit</span>
+                <span>Total</span>
                 {showStockInfo && <span>Storage</span>}
                 {showStockInfo && <span>Expiry</span>}
               </div>
@@ -509,15 +590,16 @@ export default function Orders() {
                   <span>{item.quantity ?? '-'}</span>
                   <span>{item.unit || '-'}</span>
                   <span>{item.price != null ? `$${item.price.toFixed(2)}` : '-'}</span>
+                  <span>{(item.price != null && item.quantity != null) ? `$${lineTotalData(item).toFixed(2)}` : '-'}</span>
                   {showStockInfo && <span>{item.storageLocation || '-'}</span>}
                   {showStockInfo && <span>{item.expiryDate ? new Date(item.expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-'}</span>}
                 </div>
               ))}
-              {order.items.some(it => it.price) && (
+              {total > 0 && (
                 <div className="order-item-row order-items-total">
-                  <span style={{ flex: 2 }}><strong>Items Total</strong></span>
-                  <span></span><span></span>
-                  <span><strong>${itemsTotal(order.items).toFixed(2)}</strong></span>
+                  <span style={{ flex: 2 }}><strong>Total</strong></span>
+                  <span></span><span></span><span></span>
+                  <span><strong>${total.toFixed(2)}</strong></span>
                   {showStockInfo && <><span></span><span></span></>}
                 </div>
               )}
@@ -544,10 +626,13 @@ export default function Orders() {
 
             <div className="order-actions">
               {order.status === 'ORDERED' && (
-                <button className="btn btn-primary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Receive Order</button>
+                <>
+                  <button className="btn btn-secondary btn-sm" onClick={() => openEdit(order)}><Edit3 size={14} /> Edit</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Receive</button>
+                </>
               )}
               {(order.status === 'RECEIVED' || order.status === 'STOCKED') && (
-                <button className="btn btn-secondary btn-sm" onClick={() => openReceive(order)}><CheckCircle size={14} /> Edit Details</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => openReceive(order)}><Edit3 size={14} /> Edit Details</button>
               )}
               <button className="btn btn-secondary btn-sm" onClick={() => openPhotos(order)}><Camera size={14} /> Photos</button>
               {order.status === 'ORDERED' && (
@@ -566,7 +651,7 @@ export default function Orders() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Orders</h1>
-          <p className="page-subtitle">{expectedOrders.length} expected · {pastOrders.length} past</p>
+          <p className="page-subtitle">{expectedOrders.length} expected · {allPastOrders.length} past</p>
         </div>
         <button className="btn btn-primary" onClick={() => { setShowCreate(true); setCreateRestaurant(selectedRestaurant || restaurants[0]?.id || ''); }}>
           <Plus size={18} /> New Order
@@ -600,7 +685,7 @@ export default function Orders() {
         )}
       </div>
 
-      {expectedOrders.length === 0 && pastOrders.length === 0 ? (
+      {expectedOrders.length === 0 && allPastOrders.length === 0 ? (
         <div className="empty-state">
           <Package size={48} />
           <h3>No orders {hasActiveFilters ? 'matching filters' : 'yet'}</h3>
@@ -619,16 +704,28 @@ export default function Orders() {
             </div>
           )}
 
-          {pastOrders.length > 0 && (
+          {allPastOrders.length > 0 && (
             <div className="past-orders-section">
               <button className="past-orders-toggle" onClick={() => setShowReceived(!showReceived)}>
                 {showReceived ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Past Orders ({pastOrders.length})
+                Past Orders ({allPastOrders.length})
               </button>
               {showReceived && (
-                <div className="orders-list" style={{ marginTop: 12 }}>
-                  {pastOrders.map(renderOrderCard)}
-                </div>
+                <>
+                  <div className="orders-list" style={{ marginTop: 12 }}>
+                    {pastOrders.map(renderOrderCard)}
+                  </div>
+                  {hasOlderOrders && !showAllPast && (
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setShowAllPast(true)}>
+                      Show orders older than 30 days ({allPastOrders.length - recentPastOrders.length} more)
+                    </button>
+                  )}
+                  {showAllPast && hasOlderOrders && (
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={() => setShowAllPast(false)}>
+                      Show last 30 days only
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -647,8 +744,8 @@ export default function Orders() {
               </select>
             </div>
             <div className="form-group">
-              <label className="label">Supplier</label>
-              <select className="select" value={createSupplier} onChange={e => setCreateSupplier(e.target.value)}>
+              <label className="label">Supplier *</label>
+              <select className="select" value={createSupplier} onChange={e => { setCreateSupplier(e.target.value); setCreateItems([{ ...EMPTY_ITEM }]); }}>
                 <option value="">Select supplier...</option>
                 {suppliers.map(s => (
                   <option key={s.id} value={s.name}>{s.name}{s.deliveryType ? ` (${s.deliveryType})` : ''}</option>
@@ -663,7 +760,7 @@ export default function Orders() {
           )}
 
           <label className="label" style={{ marginTop: 12 }}>Items</label>
-          {renderItemRows(createItems, updateCreateItem, addCreateItem, removeCreateItem, createSupplier, false)}
+          {renderItemRows(createItems, updateCreateItem, addCreateItem, removeCreateItem, createSupplier, false, 'create')}
 
           <div className="form-group" style={{ marginTop: 12 }}>
             <label className="label">Notes</label>
@@ -676,10 +773,51 @@ export default function Orders() {
         </form>
       </Modal>
 
+      {/* ─── Edit Order Modal (ORDERED status) ─── */}
+      <Modal isOpen={!!showEdit} onClose={() => setShowEdit(null)} title={showEdit ? `Edit Order — ${showEdit.supplier || 'Order'}` : ''} width="600px">
+        {showEdit && (
+          <form onSubmit={handleEdit}>
+            {editError && <div className="order-error">{editError}</div>}
+            <div className="form-row">
+              <div className="form-group">
+                <label className="label">Restaurant</label>
+                <input className="input" value={showEdit.restaurant.name} disabled />
+              </div>
+              <div className="form-group">
+                <label className="label">Supplier *</label>
+                <select className="select" value={editSupplier} onChange={e => { setEditSupplier(e.target.value); setEditItems([{ ...EMPTY_ITEM }]); }}>
+                  <option value="">Select supplier...</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.name}>{s.name}{s.deliveryType ? ` (${s.deliveryType})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {editSupplier && getSupplierDeliveryType(editSupplier) && (
+              <div className="delivery-type-info">
+                Delivery: <strong>{getSupplierDeliveryType(editSupplier)}</strong>
+              </div>
+            )}
+
+            <label className="label" style={{ marginTop: 12 }}>Items</label>
+            {renderItemRows(editItems, updateEditItem, addEditItem, removeEditItem, editSupplier, false, 'edit')}
+
+            <div className="form-group" style={{ marginTop: 12 }}>
+              <label className="label">Notes</label>
+              <textarea className="textarea" rows={2} value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Any notes about this order..." />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowEdit(null)}>Cancel</button>
+              <button type="submit" className="btn btn-primary"><Check size={16} /> Save Changes</button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       {/* ─── Receive / Edit Order Modal (unified) ─── */}
       <Modal isOpen={!!showReceive} onClose={() => setShowReceive(null)} title={showReceive ? `${showReceive.status === 'ORDERED' ? 'Receive' : 'Edit'} Order — ${showReceive.supplier || 'Order'}` : ''} width="650px">
         {showReceive && (
-          <form onSubmit={handleReceive}>
+          <form onSubmit={e => { e.preventDefault(); handleReceive('RECEIVED'); }}>
             {receiveError && <div className="order-error">{receiveError}</div>}
 
             {/* Payment section */}
@@ -687,8 +825,8 @@ export default function Orders() {
               <h4 className="receive-section-title"><DollarSign size={14} /> Payment</h4>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="label">Total Price</label>
-                  <input className="input" type="number" step="0.01" value={receiveTotalPaid} onChange={e => setReceiveTotalPaid(e.target.value)} placeholder={String(computeReceiveTotal()) || '0.00'} />
+                  <label className="label">Total Paid</label>
+                  <input className="input" type="number" step="0.01" value={receiveTotalPaid} onChange={e => setReceiveTotalPaid(e.target.value)} placeholder={String(computeReceiveTotal().toFixed(2)) || '0.00'} />
                 </div>
                 <div className="form-group">
                   <label className="label">Currency</label>
@@ -710,12 +848,15 @@ export default function Orders() {
                   </div>
                 </div>
               </div>
+              <div className="receive-items-total">
+                Items total: <strong>${computeReceiveTotal().toFixed(2)}</strong>
+              </div>
             </div>
 
             {/* Items section with stock fields */}
             <div className="receive-section">
               <h4 className="receive-section-title"><Package size={14} /> Items — Verify & Stock</h4>
-              {renderItemRows(receiveItems, updateReceiveItem, addReceiveItem, removeReceiveItem, showReceive.supplier || '', true)}
+              {renderItemRows(receiveItems, updateReceiveItem, addReceiveItem, removeReceiveItem, showReceive.supplier || '', true, 'receive')}
             </div>
 
             {/* Photos section inline */}
@@ -760,9 +901,14 @@ export default function Orders() {
                   <Check size={14} /> Save Changes
                 </button>
               ) : (
-                <button type="submit" className="btn btn-primary">
-                  <CheckCircle size={14} /> Receive & Stock
-                </button>
+                <>
+                  <button type="submit" className="btn btn-sm" style={{ background: '#4a9e6a', color: '#fff' }}>
+                    <CheckCircle size={14} /> Receive
+                  </button>
+                  <button type="button" className="btn btn-sm" style={{ background: '#7b68a8', color: '#fff' }} onClick={() => handleReceive('STOCKED')}>
+                    <Warehouse size={14} /> Receive & Stock
+                  </button>
+                </>
               )}
             </div>
           </form>

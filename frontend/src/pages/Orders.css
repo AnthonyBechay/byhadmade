@@ -463,6 +463,29 @@
   font-weight: 600;
 }
 
+/* Receive items total */
+.receive-items-total {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* Item line total (read-only computed field) */
+.item-field-total {
+  display: flex;
+  flex-direction: column;
+  min-width: 65px;
+  flex: 0.7;
+}
+.item-total-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6ec293;
+  padding: 6px 0;
+}
+
 /* ─── Photo Upload Compact ─── */
 .photo-upload-area.compact {
   padding: 10px;
