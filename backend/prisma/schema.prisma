@@ -21,6 +21,7 @@ model User {
   storageLocations       StorageLocation[]
   ingredientCategories   IngredientCategory[]
   ingredientTags         IngredientTag[]
+  receipts               Receipt[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 }
@@ -354,4 +355,44 @@ enum PhotoType {
   INVOICE
   INGREDIENT
   OTHER
+}
+
+// ─── Traceability (Receipts) ───
+// Separate from Orders: receiver chef snaps receipts in the morning,
+// AI extracts items, chef confirms, stored by date.
+
+model Receipt {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  receiptDate   DateTime       @default(now()) // date on the receipt (editable by chef)
+  supplier      String?
+  total         Float?
+  currency      String         @default("USD")
+  photoUrl      String
+  rawText       String?        // raw text returned by vision model
+  notes         String?
+  status        ReceiptStatus  @default(CONFIRMED)
+  items         ReceiptItem[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([userId, receiptDate])
+}
+
+model ReceiptItem {
+  id         String   @id @default(cuid())
+  receiptId  String
+  receipt    Receipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  name       String
+  quantity   Float?
+  unit       String?
+  unitPrice  Float?
+  total      Float?
+  notes      String?
+}
+
+enum ReceiptStatus {
+  PENDING
+  CONFIRMED
 }

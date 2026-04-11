@@ -22,6 +22,10 @@ services:
       - R2_BUCKET_NAME=${R2_BUCKET_NAME}
       - R2_PUBLIC_URL=${R2_PUBLIC_URL}
 
+      # === Anthropic (Traceability receipt extraction) ===
+      # Used by the Traceability feature to extract items from receipt photos via Claude vision
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
       # === Pre-configured (usually no changes needed) ===
       - PORT=3001
       - NODE_ENV=production

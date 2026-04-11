@@ -23,6 +23,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://byhadmade:byhadmade_secret@postgres:5432/byhadmade
       - JWT_SECRET=byhadmade-jwt-secret-change-me
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - PORT=3001
       - NODE_ENV=production
     depends_on:
