@@ -12,6 +12,8 @@ export interface AuthRequest extends Request {
   allowedRestaurantIds?: string[];
   /** Menus the caller is restricted to. Empty array = no restriction (full access). */
   allowedMenuIds?: string[];
+  /** Feature keys the caller is restricted to. Empty array = no restriction (full access). */
+  allowedFeatures?: string[];
 }
 
 interface TokenPayload {
@@ -19,6 +21,7 @@ interface TokenPayload {
   subAccountId?: string;
   allowedRestaurantIds?: string[];
   allowedMenuIds?: string[];
+  allowedFeatures?: string[];
 }
 
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
@@ -35,6 +38,7 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
     req.subAccountId = decoded.subAccountId;
     req.allowedRestaurantIds = decoded.allowedRestaurantIds || [];
     req.allowedMenuIds = decoded.allowedMenuIds || [];
+    req.allowedFeatures = decoded.allowedFeatures || [];
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -85,6 +89,25 @@ export function restaurantScope(
   const allowed = req.allowedRestaurantIds || [];
   if (allowed.length === 0) return {}; // no restriction
   return { [field]: { in: allowed } };
+}
+
+/** Helper: does the caller have access to this feature? */
+export function canAccessFeature(req: AuthRequest, feature: string): boolean {
+  if (!req.subAccountId) return true; // owner: full access
+  const allowed = req.allowedFeatures || [];
+  if (allowed.length === 0) return true; // empty = no restriction
+  return allowed.includes(feature);
+}
+
+/** Middleware: require access to a specific feature. */
+export function requireFeature(feature: string) {
+  return function (req: AuthRequest, res: Response, next: NextFunction): void {
+    if (!canAccessFeature(req, feature)) {
+      res.status(403).json({ error: 'Feature not allowed' });
+      return;
+    }
+    next();
+  };
 }
 
 /** Same idea, for menus. */

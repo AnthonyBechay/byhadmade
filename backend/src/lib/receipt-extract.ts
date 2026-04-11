@@ -67,7 +67,9 @@ export async function extractReceiptFromImage(
     | 'image/webp';
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    // Haiku 4.5 is ~2-3x faster than Sonnet for structured OCR,
+    // still strong at reading printed receipts.
+    model: 'claude-haiku-4-5',
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
     messages: [

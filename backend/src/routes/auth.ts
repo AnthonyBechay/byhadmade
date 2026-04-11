@@ -65,6 +65,7 @@ router.post('/login', async (req, res) => {
             subAccountId: sub.id,
             allowedRestaurantIds: sub.allowedRestaurantIds,
             allowedMenuIds: sub.allowedMenuIds,
+            allowedFeatures: sub.allowedFeatures,
           },
           JWT_SECRET,
           { expiresIn: '7d' },
@@ -90,7 +91,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res) => {
         where: { id: req.subAccountId },
         select: {
           id: true, email: true, name: true, isActive: true,
-          allowedRestaurantIds: true, allowedMenuIds: true,
+          allowedRestaurantIds: true, allowedMenuIds: true, allowedFeatures: true,
         },
       });
       if (!sub || !sub.isActive) {

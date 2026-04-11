@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, requireOwner, menuScope, canAccessMenu, AuthRequest } from '../middleware/auth';
+import { authenticate, requireOwner, requireFeature, menuScope, canAccessMenu, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
 
 router.use(authenticate);
+router.use(requireFeature('menus'));
 
 router.get('/', async (req: AuthRequest, res) => {
   try {

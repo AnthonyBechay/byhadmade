@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, canAccessRestaurant, restaurantScope, AuthRequest } from '../middleware/auth';
+import { authenticate, requireFeature, canAccessRestaurant, restaurantScope, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
 
 router.use(authenticate);
+router.use(requireFeature('schedules'));
 
 router.get('/', async (req: AuthRequest, res) => {
   try {

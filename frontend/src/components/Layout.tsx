@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ChefHat, UtensilsCrossed, Salad, CalendarDays, Package,
   ScanLine, Settings, LogOut, BookOpen, Users, ClipboardList, X,
 } from 'lucide-react';
+import { api } from '../lib/api';
 import './Layout.css';
 
-interface NavItem { to: string; icon: any; label: string; end?: boolean }
+interface NavItem { to: string; icon: any; label: string; end?: boolean; feature?: string }
 interface NavSection {
   key: string;
   label: string;
@@ -16,15 +17,15 @@ interface NavSection {
 
 const dashboardItem: NavItem = { to: '/app', icon: LayoutDashboard, label: 'Dashboard', end: true };
 
-const sections: NavSection[] = [
+const allSections: NavSection[] = [
   {
     key: 'menu',
     label: 'Menu Engineering',
     icon: BookOpen,
     items: [
-      { to: '/app/ingredients', icon: Salad, label: 'Ingredients' },
-      { to: '/app/menus', icon: UtensilsCrossed, label: 'Menus' },
-      { to: '/app/recipes', icon: ChefHat, label: 'Recipes' },
+      { to: '/app/ingredients', icon: Salad, label: 'Ingredients', feature: 'ingredients' },
+      { to: '/app/menus', icon: UtensilsCrossed, label: 'Menus', feature: 'menus' },
+      { to: '/app/recipes', icon: ChefHat, label: 'Recipes', feature: 'recipes' },
     ],
   },
   {
@@ -32,7 +33,7 @@ const sections: NavSection[] = [
     label: 'People',
     icon: Users,
     items: [
-      { to: '/app/scheduling', icon: CalendarDays, label: 'Schedules' },
+      { to: '/app/scheduling', icon: CalendarDays, label: 'Schedules', feature: 'schedules' },
     ],
   },
   {
@@ -40,33 +41,55 @@ const sections: NavSection[] = [
     label: 'Operations',
     icon: ClipboardList,
     items: [
-      { to: '/app/orders', icon: Package, label: 'Orders' },
-      { to: '/app/traceability', icon: ScanLine, label: 'Traceability' },
+      { to: '/app/orders', icon: Package, label: 'Orders', feature: 'orders' },
+      { to: '/app/traceability', icon: ScanLine, label: 'Traceability', feature: 'traceability' },
     ],
   },
   {
+    // Owner-only — filtered out entirely for sub-accounts.
     key: 'settings',
     label: 'Settings',
     icon: Settings,
     items: [
-      { to: '/app/settings', icon: Settings, label: 'Settings', end: true },
+      { to: '/app/settings', icon: Settings, label: 'Settings', end: true, feature: '__owner__' },
     ],
   },
 ];
 
-// All destinations (dashboard + every section item) — used to know which section a route belongs to
-const allNavItems: { item: NavItem; sectionKey: string | null }[] = [
-  { item: dashboardItem, sectionKey: null },
-  ...sections.flatMap((s) => s.items.map((it) => ({ item: it, sectionKey: s.key }))),
-];
+interface MeResponse {
+  role: 'owner' | 'sub-account';
+  allowedFeatures?: string[];
+}
 
-function findSectionForPath(pathname: string): string | null {
+function filterSections(me: MeResponse | null): NavSection[] {
+  if (!me) return allSections; // optimistic: show everything until we know
+  if (me.role === 'owner') return allSections;
+  const allowed = me.allowedFeatures || [];
+  // empty list = no restriction (matches backend semantics)
+  const hasAll = allowed.length === 0;
+  return allSections
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((it) => {
+        if (it.feature === '__owner__') return false; // sub-accounts never see Settings
+        if (hasAll) return true;
+        return it.feature ? allowed.includes(it.feature) : true;
+      }),
+    }))
+    .filter((s) => s.items.length > 0);
+}
+
+function findSectionForPath(pathname: string, sections: NavSection[]): string | null {
   // Longest-matching nav `to` wins
+  const entries: { to: string; key: string | null }[] = [
+    { to: dashboardItem.to, key: null },
+    ...sections.flatMap((s) => s.items.map((it) => ({ to: it.to, key: s.key }))),
+  ];
   let best: { to: string; key: string | null } | null = null;
-  for (const entry of allNavItems) {
-    if (pathname === entry.item.to || pathname.startsWith(entry.item.to + '/')) {
-      if (!best || entry.item.to.length > best.to.length) {
-        best = { to: entry.item.to, key: entry.sectionKey };
+  for (const entry of entries) {
+    if (pathname === entry.to || pathname.startsWith(entry.to + '/')) {
+      if (!best || entry.to.length > best.to.length) {
+        best = entry;
       }
     }
   }
@@ -77,13 +100,19 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [openSectionSheet, setOpenSectionSheet] = useState<string | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
+
+  useEffect(() => {
+    api.get('/auth/me').then(setMe).catch(() => setMe(null));
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     navigate('/login');
   };
 
-  const currentSectionKey = findSectionForPath(location.pathname);
+  const sections = filterSections(me);
+  const currentSectionKey = findSectionForPath(location.pathname, sections);
 
   return (
     <div className="layout">

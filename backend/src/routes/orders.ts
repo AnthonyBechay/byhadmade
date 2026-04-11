@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
 import path from 'path';
-import { authenticate, restaurantScope, canAccessRestaurant, AuthRequest } from '../middleware/auth';
+import { authenticate, requireFeature, restaurantScope, canAccessRestaurant, AuthRequest } from '../middleware/auth';
 import { uploadToR2, deleteFromR2 } from '../lib/r2';
 
 const router = Router();
@@ -19,6 +19,7 @@ const upload = multer({
 });
 
 router.use(authenticate);
+router.use(requireFeature('orders'));
 
 // Verify restaurant ownership
 async function verifyRestaurant(restaurantId: string, userId: string) {

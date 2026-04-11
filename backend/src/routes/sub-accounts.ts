@@ -18,6 +18,7 @@ const SAFE_FIELDS = {
   isActive: true,
   allowedMenuIds: true,
   allowedRestaurantIds: true,
+  allowedFeatures: true,
   createdAt: true,
   updatedAt: true,
 };
@@ -39,7 +40,7 @@ router.get('/', async (req: AuthRequest, res) => {
 // ─── Create ───
 router.post('/', async (req: AuthRequest, res) => {
   try {
-    const { email, password, name, isActive, allowedMenuIds, allowedRestaurantIds } = req.body;
+    const { email, password, name, isActive, allowedMenuIds, allowedRestaurantIds, allowedFeatures } = req.body;
     if (!email || !password || !name) {
       res.status(400).json({ error: 'Email, password, and name are required' });
       return;
@@ -73,6 +74,7 @@ router.post('/', async (req: AuthRequest, res) => {
         isActive: isActive !== false,
         allowedMenuIds: Array.isArray(allowedMenuIds) ? allowedMenuIds : [],
         allowedRestaurantIds: Array.isArray(allowedRestaurantIds) ? allowedRestaurantIds : [],
+        allowedFeatures: Array.isArray(allowedFeatures) ? allowedFeatures : [],
       },
       select: SAFE_FIELDS,
     });
@@ -92,13 +94,14 @@ router.put('/:id', async (req: AuthRequest, res) => {
     });
     if (!existing) { res.status(404).json({ error: 'Sub-account not found' }); return; }
 
-    const { email, password, name, isActive, allowedMenuIds, allowedRestaurantIds } = req.body;
+    const { email, password, name, isActive, allowedMenuIds, allowedRestaurantIds, allowedFeatures } = req.body;
     const data: any = {};
     if (email !== undefined) data.email = email;
     if (name !== undefined) data.name = name;
     if (isActive !== undefined) data.isActive = !!isActive;
     if (Array.isArray(allowedMenuIds)) data.allowedMenuIds = allowedMenuIds;
     if (Array.isArray(allowedRestaurantIds)) data.allowedRestaurantIds = allowedRestaurantIds;
+    if (Array.isArray(allowedFeatures)) data.allowedFeatures = allowedFeatures;
     if (password) {
       if (typeof password !== 'string' || password.length < 6) {
         res.status(400).json({ error: 'Password must be at least 6 characters' });

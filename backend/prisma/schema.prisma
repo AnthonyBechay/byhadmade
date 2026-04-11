@@ -412,6 +412,7 @@ model SubAccount {
   isActive            Boolean  @default(true)
   allowedMenuIds      String[] @default([])
   allowedRestaurantIds String[] @default([])
+  allowedFeatures     String[] @default([])
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

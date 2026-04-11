@@ -12,10 +12,20 @@ interface SubAccount {
   isActive: boolean;
   allowedMenuIds: string[];
   allowedRestaurantIds: string[];
+  allowedFeatures: string[];
   createdAt: string;
 }
 
 const MAX_SUB_ACCOUNTS = 5;
+
+const FEATURES: { key: string; label: string; desc: string }[] = [
+  { key: 'ingredients', label: 'Ingredients', desc: 'Ingredients, suppliers, storage, categories, tags' },
+  { key: 'menus', label: 'Menus', desc: 'Menu builder' },
+  { key: 'recipes', label: 'Recipes', desc: 'Recipe management' },
+  { key: 'schedules', label: 'Schedules', desc: 'Employees and weekly schedules' },
+  { key: 'orders', label: 'Orders', desc: 'Supplier order management' },
+  { key: 'traceability', label: 'Traceability', desc: 'Daily receipts and receipt capture' },
+];
 
 export default function SettingsUsers() {
   const [subAccounts, setSubAccounts] = useState<SubAccount[]>([]);
@@ -29,6 +39,7 @@ export default function SettingsUsers() {
     email: '', name: '', password: '', isActive: true,
     allowedRestaurantIds: [] as string[],
     allowedMenuIds: [] as string[],
+    allowedFeatures: [] as string[],
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -57,7 +68,7 @@ export default function SettingsUsers() {
     setEditing(null);
     setForm({
       email: '', name: '', password: '', isActive: true,
-      allowedRestaurantIds: [], allowedMenuIds: [],
+      allowedRestaurantIds: [], allowedMenuIds: [], allowedFeatures: [],
     });
     setError('');
     setShowModal(true);
@@ -72,6 +83,7 @@ export default function SettingsUsers() {
       isActive: sa.isActive,
       allowedRestaurantIds: sa.allowedRestaurantIds,
       allowedMenuIds: sa.allowedMenuIds,
+      allowedFeatures: sa.allowedFeatures || [],
     });
     setError('');
     setShowModal(true);
@@ -89,6 +101,7 @@ export default function SettingsUsers() {
           isActive: form.isActive,
           allowedRestaurantIds: form.allowedRestaurantIds,
           allowedMenuIds: form.allowedMenuIds,
+          allowedFeatures: form.allowedFeatures,
         };
         if (form.password) payload.password = form.password;
         await api.put(`/sub-accounts/${editing.id}`, payload);
@@ -129,6 +142,15 @@ export default function SettingsUsers() {
       allowedMenuIds: f.allowedMenuIds.includes(id)
         ? f.allowedMenuIds.filter((x) => x !== id)
         : [...f.allowedMenuIds, id],
+    }));
+  };
+
+  const toggleFeature = (key: string) => {
+    setForm((f) => ({
+      ...f,
+      allowedFeatures: f.allowedFeatures.includes(key)
+        ? f.allowedFeatures.filter((x) => x !== key)
+        : [...f.allowedFeatures, key],
     }));
   };
 
@@ -174,6 +196,11 @@ export default function SettingsUsers() {
                     </span>
                     <span>{sa.allowedRestaurantIds.length || 'All'} restaurants</span>
                     <span>{sa.allowedMenuIds.length || 'All'} menus</span>
+                    <span>
+                      {(sa.allowedFeatures && sa.allowedFeatures.length > 0)
+                        ? `${sa.allowedFeatures.length} features`
+                        : 'All features'}
+                    </span>
                   </div>
                 </div>
                 <div className="settings-item-actions">
@@ -235,6 +262,29 @@ export default function SettingsUsers() {
                 />
                 <span>Account is active</span>
               </label>
+            </div>
+
+            <div className="form-field">
+              <label>Allowed features</label>
+              <p className="form-hint">
+                Which modules this account can open. Leave empty to grant access to all features.
+              </p>
+              <div className="chip-list">
+                {FEATURES.map((f) => {
+                  const on = form.allowedFeatures.includes(f.key);
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      className={`chip ${on ? 'chip-on' : ''}`}
+                      onClick={() => toggleFeature(f.key)}
+                      title={f.desc}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="form-field">

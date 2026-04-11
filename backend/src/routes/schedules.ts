@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, canAccessRestaurant, restaurantScope, AuthRequest } from '../middleware/auth';
+import { authenticate, requireFeature, canAccessRestaurant, restaurantScope, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -71,6 +71,7 @@ router.get('/public/:shareToken', async (req, res) => {
 
 // ─── All other routes require auth ───
 router.use(authenticate);
+router.use(requireFeature('schedules'));
 
 // Helper to verify restaurant ownership
 async function verifyRestaurant(restaurantId: string, userId: string) {

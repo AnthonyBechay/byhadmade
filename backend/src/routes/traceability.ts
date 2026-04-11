@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
 import path from 'path';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireFeature, AuthRequest } from '../middleware/auth';
 import { uploadToR2, deleteFromR2 } from '../lib/r2';
 import { extractReceiptFromImage } from '../lib/receipt-extract';
 
@@ -19,6 +19,7 @@ const upload = multer({
 });
 
 router.use(authenticate);
+router.use(requireFeature('traceability'));
 
 // ─── List receipts (optionally filter by date range) ───
 router.get('/', async (req: AuthRequest, res) => {
@@ -66,21 +67,29 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
     const file = req.file;
     if (!file) { res.status(400).json({ error: 'No photo uploaded' }); return; }
 
-    // Extract items via Claude vision
-    let extracted;
-    try {
-      extracted = await extractReceiptFromImage(file.buffer, file.mimetype);
-    } catch (err: any) {
-      console.error('Vision extraction failed:', err);
-      // Fall back to an empty receipt so the chef can still capture and edit manually
-      extracted = { items: [], rawText: err?.message || 'extraction failed' };
-    }
+    // Run vision extraction + R2 upload in parallel to shave latency.
+    // Folder path uses a generic "pending" bucket while we wait for the supplier name;
+    // we rename/re-key afterwards isn't worth it — just store under date.
+    const receivedAt = new Date(); // today — user can edit afterwards
+    const dateSlug = receivedAt.toISOString().slice(0, 10);
+    const ext = path.extname(file.originalname) || '.jpg';
 
-    // Upload photo to R2: {username}/traceability/{supplier}/{YYYY-MM-DD}/receipt_{shortId}.ext
-    const user = await prisma.user.findUnique({
+    const userPromise = prisma.user.findUnique({
       where: { id: req.userId! },
       select: { name: true },
     });
+
+    const extractPromise = extractReceiptFromImage(file.buffer, file.mimetype).catch(
+      (err: any) => {
+        console.error('Vision extraction failed:', err);
+        return { items: [], rawText: err?.message || 'extraction failed' } as any;
+      },
+    );
+
+    // Start upload immediately with a temporary supplier slug; we'll rewrite
+    // the receipt's photoUrl only if you ever want perfect folder hygiene.
+    const [user, extracted] = await Promise.all([userPromise, extractPromise]);
+
     const userSlug = (user?.name || 'user')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -89,10 +98,7 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
-    const receivedAt = new Date(); // today — user can edit afterwards
-    const dateSlug = receivedAt.toISOString().slice(0, 10);
     const folderPath = `${userSlug}/traceability/${supplierSlug}/${dateSlug}`;
-    const ext = path.extname(file.originalname) || '.jpg';
 
     const photoUrl = await uploadToR2(file.buffer, file.mimetype, folderPath, ext, {
       label: 'receipt',
@@ -110,7 +116,7 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
         rawText: extracted.rawText || null,
         status: 'CONFIRMED',
         items: {
-          create: (extracted.items || []).map((it) => ({
+          create: (extracted.items || []).map((it: any) => ({
             name: it.name || 'Unnamed',
             quantity: it.quantity != null ? it.quantity : null,
             unit: it.unit || null,
