@@ -1,3 +1,139 @@
+/* ── Tab bar ── */
+.settings-tabs {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 0.3rem;
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+}
+.settings-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.9rem;
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  transition: color 0.15s, background 0.15s;
+}
+.settings-tab:hover { color: var(--color-text); }
+.settings-tab.active {
+  background: rgba(200, 149, 108, 0.14);
+  color: var(--color-primary-light);
+}
+.settings-tab-body { display: block; }
+
+/* ── Form helpers used by SettingsUsers ── */
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.form-field label {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.form-field input[type="text"],
+.form-field input[type="email"],
+.form-field input[type="password"],
+.form-field input[type="number"],
+.form-field input[type="date"],
+.form-field input[type="datetime-local"],
+.form-field select,
+.form-field textarea {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  color: var(--color-text);
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+}
+.form-field input:focus,
+.form-field select:focus,
+.form-field textarea:focus {
+  outline: none;
+  border-color: var(--color-primary-light, #d4a035);
+}
+.form-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.checkbox-line {
+  display: flex;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 0.9rem !important;
+  color: var(--color-text) !important;
+}
+.form-error {
+  background: rgba(224, 85, 85, 0.12);
+  border: 1px solid rgba(224, 85, 85, 0.4);
+  color: #e05555;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.chip {
+  padding: 0.4rem 0.7rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.15s;
+}
+.chip:hover { color: var(--color-text); }
+.chip-on {
+  background: rgba(200, 149, 108, 0.18);
+  border-color: rgba(200, 149, 108, 0.5);
+  color: var(--color-primary-light);
+  font-weight: 600;
+}
+.spin { animation: settings-spin 1s linear infinite; }
+@keyframes settings-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .settings-tabs { gap: 0.2rem; }
+  .settings-tab { padding: 0.6rem 0.5rem; font-size: 0.85rem; }
+}
+
 .settings-section {
   background: var(--color-surface);
   border: 1px solid var(--color-border);

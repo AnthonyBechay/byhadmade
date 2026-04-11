@@ -26,14 +26,14 @@ router.get('/', async (req: AuthRequest, res) => {
     const { from, to } = req.query as { from?: string; to?: string };
     const where: any = { userId: req.userId! };
     if (from || to) {
-      where.receiptDate = {};
-      if (from) where.receiptDate.gte = new Date(from);
-      if (to) where.receiptDate.lte = new Date(to);
+      where.receivedAt = {};
+      if (from) where.receivedAt.gte = new Date(from);
+      if (to) where.receivedAt.lte = new Date(to);
     }
     const receipts = await prisma.receipt.findMany({
       where,
       include: { items: true },
-      orderBy: { receiptDate: 'desc' },
+      orderBy: { receivedAt: 'desc' },
     });
     res.json(receipts);
   } catch (error) {
@@ -59,7 +59,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
 // ─── Capture receipt: upload photo → extract via AI → create immediately ───
 // Single-shot flow: the chef snaps a photo and the receipt is saved right away.
 // They can edit it afterwards via PUT if anything is wrong.
-// receiptDate defaults to "today" (server time) — the date on the receipt
+// receivedAt defaults to "today" (server time) — the date on the receipt
 // itself lives in rawText for reference and the user can change it in the edit flow.
 router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
   try {
@@ -89,8 +89,8 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
-    const receiptDate = new Date(); // today — user can edit afterwards
-    const dateSlug = receiptDate.toISOString().slice(0, 10);
+    const receivedAt = new Date(); // today — user can edit afterwards
+    const dateSlug = receivedAt.toISOString().slice(0, 10);
     const folderPath = `${userSlug}/traceability/${supplierSlug}/${dateSlug}`;
     const ext = path.extname(file.originalname) || '.jpg';
 
@@ -103,7 +103,7 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
         userId: req.userId!,
         photoUrl,
         supplier: extracted.supplier || null,
-        receiptDate,
+        receivedAt,
         currency: extracted.currency || 'USD',
         total: extracted.total != null ? extracted.total : null,
         notes: extracted.notes || null,
@@ -139,11 +139,11 @@ router.put('/:id', async (req: AuthRequest, res) => {
     });
     if (!existing) { res.status(404).json({ error: 'Receipt not found' }); return; }
 
-    const { supplier, receiptDate, currency, total, notes, items } = req.body;
+    const { supplier, receivedAt, currency, total, notes, items } = req.body;
 
     const data: any = {};
     if (supplier !== undefined) data.supplier = supplier || null;
-    if (receiptDate !== undefined) data.receiptDate = new Date(receiptDate);
+    if (receivedAt !== undefined) data.receivedAt = new Date(receivedAt);
     if (currency !== undefined) data.currency = currency || 'USD';
     if (total !== undefined) data.total = total != null && total !== '' ? parseFloat(total) : null;
     if (notes !== undefined) data.notes = notes || null;

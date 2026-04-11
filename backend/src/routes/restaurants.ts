@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
 import path from 'path';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireOwner, restaurantScope, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -28,7 +28,7 @@ router.use(authenticate);
 router.get('/', async (req: AuthRequest, res) => {
   try {
     const restaurants = await prisma.restaurant.findMany({
-      where: { userId: req.userId! },
+      where: { userId: req.userId!, ...restaurantScope(req, 'id') },
       include: { _count: { select: { employees: true } } },
       orderBy: { name: 'asc' },
     });
@@ -38,7 +38,7 @@ router.get('/', async (req: AuthRequest, res) => {
   }
 });
 
-router.post('/', async (req: AuthRequest, res) => {
+router.post('/', requireOwner, async (req: AuthRequest, res) => {
   try {
     const { name, address, phone, logoUrl, details } = req.body;
     const restaurant = await prisma.restaurant.create({ data: { name, address, phone, logoUrl, details, userId: req.userId! } });
@@ -48,7 +48,7 @@ router.post('/', async (req: AuthRequest, res) => {
   }
 });
 
-router.put('/:id', async (req: AuthRequest, res) => {
+router.put('/:id', requireOwner, async (req: AuthRequest, res) => {
   try {
     const { name, address, phone, logoUrl, details } = req.body;
     const restaurant = await prisma.restaurant.update({
@@ -61,7 +61,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
   }
 });
 
-router.post('/:id/upload-logo', upload.single('logo'), async (req: AuthRequest, res) => {
+router.post('/:id/upload-logo', requireOwner, upload.single('logo'), async (req: AuthRequest, res) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded' });
@@ -79,7 +79,7 @@ router.post('/:id/upload-logo', upload.single('logo'), async (req: AuthRequest, 
   }
 });
 
-router.delete('/:id', async (req: AuthRequest, res) => {
+router.delete('/:id', requireOwner, async (req: AuthRequest, res) => {
   try {
     await prisma.restaurant.delete({ where: { id: req.params.id as string, userId: req.userId! } });
     res.json({ success: true });

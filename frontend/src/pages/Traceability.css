@@ -274,6 +274,11 @@
   gap: 0.35rem;
 }
 .tr-dot { opacity: 0.5; }
+.tr-receipt-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--color-text);
+}
 .tr-receipt-actions {
   display: flex;
   gap: 0.2rem;

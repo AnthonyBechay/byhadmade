@@ -20,7 +20,7 @@ interface ReceiptItem {
 
 interface Receipt {
   id: string;
-  receiptDate: string;
+  receivedAt: string;
   supplier: string | null;
   total: number | null;
   currency: string;
@@ -69,7 +69,23 @@ function formatDateLabel(iso: string) {
 }
 
 function dateKey(iso: string) {
-  return new Date(iso).toISOString().slice(0, 10);
+  // Group by *local* date, not UTC
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+// Convert ISO string to value usable by <input type="datetime-local" />
+function toLocalDatetimeInput(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function Traceability() {
@@ -131,7 +147,7 @@ export default function Traceability() {
       setReceipts((prev) => [created, ...prev]);
       setJustCreatedId(created.id);
       // auto-expand today's group so the new one is visible
-      setExpanded((p) => ({ ...p, [dateKey(created.receiptDate)]: true }));
+      setExpanded((p) => ({ ...p, [dateKey(created.receivedAt)]: true }));
       // clear the highlight after a moment
       setTimeout(() => setJustCreatedId((id) => (id === created.id ? null : id)), 2500);
     } catch (err: any) {
@@ -151,7 +167,8 @@ export default function Traceability() {
   const openEdit = (r: Receipt) => {
     setEditReceipt(r);
     setEditSupplier(r.supplier || '');
-    setEditDate(r.receiptDate.slice(0, 10));
+    // datetime-local needs "YYYY-MM-DDTHH:mm" in local time
+    setEditDate(toLocalDatetimeInput(r.receivedAt));
     setEditCurrency(r.currency || 'USD');
     setEditTotal(r.total != null ? String(r.total) : '');
     setEditNotes(r.notes || '');
@@ -177,7 +194,7 @@ export default function Traceability() {
     try {
       const payload = {
         supplier: editSupplier || null,
-        receiptDate: editDate,
+        receivedAt: editDate ? new Date(editDate).toISOString() : new Date().toISOString(),
         currency: editCurrency,
         total: editTotal || null,
         notes: editNotes || null,
@@ -216,7 +233,7 @@ export default function Traceability() {
   // Group receipts by date
   const grouped: Record<string, Receipt[]> = {};
   for (const r of receipts) {
-    const key = dateKey(r.receiptDate);
+    const key = dateKey(r.receivedAt);
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(r);
   }
@@ -299,7 +316,7 @@ export default function Traceability() {
                   {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                 </div>
                 <div className="tr-day-label-wrap">
-                  <span className="tr-day-label">{formatDateLabel(day[0].receiptDate)}</span>
+                  <span className="tr-day-label">{formatDateLabel(day[0].receivedAt)}</span>
                   <span className="tr-day-count">
                     {day.length} receipt{day.length > 1 ? 's' : ''}
                   </span>
@@ -339,6 +356,8 @@ export default function Traceability() {
                             <span>{r.supplier || 'Unknown supplier'}</span>
                           </div>
                           <div className="tr-receipt-meta">
+                            <span className="tr-receipt-time">{formatTime(r.receivedAt)}</span>
+                            <span className="tr-dot">•</span>
                             <span>{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
                             {r.total != null && (
                               <>
@@ -396,9 +415,9 @@ export default function Traceability() {
                 />
               </div>
               <div className="form-field">
-                <label>Date received</label>
+                <label>Received at</label>
                 <input
-                  type="date"
+                  type="datetime-local"
                   value={editDate}
                   onChange={(e) => setEditDate(e.target.value)}
                 />

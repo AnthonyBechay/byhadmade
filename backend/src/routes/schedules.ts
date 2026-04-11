@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, canAccessRestaurant, restaurantScope, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -81,7 +81,12 @@ router.get('/', async (req: AuthRequest, res) => {
   try {
     const { restaurantId } = req.query;
     const where: any = { restaurant: { userId: req.userId! } };
-    if (restaurantId) where.restaurantId = restaurantId as string;
+    if (restaurantId) {
+      if (!canAccessRestaurant(req, restaurantId as string)) { res.json([]); return; }
+      where.restaurantId = restaurantId as string;
+    } else {
+      Object.assign(where, restaurantScope(req, 'restaurantId'));
+    }
 
     const schedules = await prisma.schedule.findMany({
       where,
@@ -111,6 +116,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
+    if (!canAccessRestaurant(req, schedule.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
     res.json(schedule);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch schedule' });
@@ -128,6 +134,7 @@ router.get('/:id/summary', async (req: AuthRequest, res) => {
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
+    if (!canAccessRestaurant(req, schedule.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
     const summary: Record<string, {
       name: string; role: string | null; color: string | null; hourlyRate: number | null;
@@ -184,6 +191,7 @@ router.get('/:id/summary', async (req: AuthRequest, res) => {
 // Monthly salary report
 router.get('/salary-report/:restaurantId', async (req: AuthRequest, res) => {
   try {
+    if (!canAccessRestaurant(req, req.params.restaurantId as string)) { res.status(404).json({ error: 'Restaurant not found' }); return; }
     const rest = await verifyRestaurant(req.params.restaurantId as string, req.userId!);
     if (!rest) { res.status(404).json({ error: 'Restaurant not found' }); return; }
 
@@ -246,6 +254,7 @@ router.get('/salary-report/:restaurantId', async (req: AuthRequest, res) => {
 // Multi-week report
 router.get('/report/:restaurantId', async (req: AuthRequest, res) => {
   try {
+    if (!canAccessRestaurant(req, req.params.restaurantId as string)) { res.status(404).json({ error: 'Restaurant not found' }); return; }
     const rest = await verifyRestaurant(req.params.restaurantId as string, req.userId!);
     if (!rest) { res.status(404).json({ error: 'Restaurant not found' }); return; }
 
@@ -293,6 +302,7 @@ router.get('/report/:restaurantId', async (req: AuthRequest, res) => {
 router.post('/', async (req: AuthRequest, res) => {
   try {
     const { weekStart, restaurantId, notes } = req.body;
+    if (!canAccessRestaurant(req, restaurantId)) { res.status(404).json({ error: 'Restaurant not found' }); return; }
     const rest = await verifyRestaurant(restaurantId, req.userId!);
     if (!rest) { res.status(404).json({ error: 'Restaurant not found' }); return; }
 
@@ -330,6 +340,7 @@ router.post('/:id/duplicate', async (req: AuthRequest, res) => {
       include: { shifts: true, employeeOrders: true },
     });
     if (!source) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    if (!canAccessRestaurant(req, source.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
     const date = new Date(weekStart);
     const day = date.getDay();
@@ -365,6 +376,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
     const { published, notes } = req.body;
     const existing = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
     if (!existing) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    if (!canAccessRestaurant(req, existing.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
     const schedule = await prisma.schedule.update({
       where: { id: req.params.id as string },
@@ -381,6 +393,7 @@ router.delete('/:id', async (req: AuthRequest, res) => {
   try {
     const existing = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
     if (!existing) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    if (!canAccessRestaurant(req, existing.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
     await prisma.schedule.delete({ where: { id: req.params.id as string } });
     res.json({ success: true });
   } catch (error) {
@@ -393,6 +406,7 @@ router.put('/:id/employee-order', async (req: AuthRequest, res) => {
   try {
     const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
     if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    if (!canAccessRestaurant(req, sched.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
     const { orders } = req.body; // Array of { employeeId, displayOrder }
     for (const o of orders) {
@@ -415,6 +429,7 @@ router.delete('/:id/employee/:employeeId/shifts', async (req: AuthRequest, res) 
   try {
     const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
     if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    if (!canAccessRestaurant(req, sched.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
     await prisma.shift.deleteMany({ where: { scheduleId: req.params.id as string, employeeId: req.params.employeeId as string } });
     // Also remove the order entry
@@ -437,6 +452,7 @@ router.post('/:id/shifts', async (req: AuthRequest, res) => {
   try {
     const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
     if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    if (!canAccessRestaurant(req, sched.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
     const { employeeId, dayOfWeek, startTime, endTime, shiftType, notes, breakMinutes } = req.body;
     if (shiftType === 'WORK' || shiftType === 'BREAK') {
@@ -459,6 +475,7 @@ router.post('/:id/shifts/bulk', async (req: AuthRequest, res) => {
   try {
     const sched = await prisma.schedule.findFirst({ where: { id: req.params.id as string, restaurant: { userId: req.userId! } } });
     if (!sched) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    if (!canAccessRestaurant(req, sched.restaurantId)) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
     const { shifts } = req.body;
     for (const s of shifts) {
@@ -486,8 +503,10 @@ router.put('/shifts/:shiftId', async (req: AuthRequest, res) => {
     const { dayOfWeek, startTime, endTime, shiftType, notes, breakMinutes } = req.body;
     const current = await prisma.shift.findFirst({
       where: { id: req.params.shiftId as string, schedule: { restaurant: { userId: req.userId! } } },
+      include: { schedule: { select: { restaurantId: true } } },
     });
     if (!current) { res.status(404).json({ error: 'Shift not found' }); return; }
+    if (!canAccessRestaurant(req, current.schedule.restaurantId)) { res.status(404).json({ error: 'Shift not found' }); return; }
 
     if ((shiftType === 'WORK' || shiftType === 'BREAK') && startTime && endTime) {
       const existing = await prisma.shift.findMany({
@@ -515,8 +534,10 @@ router.delete('/shifts/:shiftId', async (req: AuthRequest, res) => {
   try {
     const shift = await prisma.shift.findFirst({
       where: { id: req.params.shiftId as string, schedule: { restaurant: { userId: req.userId! } } },
+      include: { schedule: { select: { restaurantId: true } } },
     });
     if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+    if (!canAccessRestaurant(req, shift.schedule.restaurantId)) { res.status(404).json({ error: 'Shift not found' }); return; }
     await prisma.shift.delete({ where: { id: req.params.shiftId as string } });
     res.json({ success: true });
   } catch (error) {

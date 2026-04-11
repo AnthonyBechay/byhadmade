@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireOwner, menuScope, canAccessMenu, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -10,7 +10,7 @@ router.use(authenticate);
 router.get('/', async (req: AuthRequest, res) => {
   try {
     const menus = await prisma.menu.findMany({
-      where: { userId: req.userId! },
+      where: { userId: req.userId!, ...menuScope(req, 'id') },
       include: {
         items: { include: { recipe: true }, orderBy: { sortOrder: 'asc' } },
         _count: { select: { items: true } },
@@ -25,8 +25,10 @@ router.get('/', async (req: AuthRequest, res) => {
 
 router.get('/:id', async (req: AuthRequest, res) => {
   try {
+    const id = req.params.id as string;
+    if (!canAccessMenu(req, id)) { res.status(404).json({ error: 'Menu not found' }); return; }
     const menu = await prisma.menu.findFirst({
-      where: { id: req.params.id as string, userId: req.userId! },
+      where: { id, userId: req.userId! },
       include: {
         items: {
           include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
@@ -44,7 +46,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
   }
 });
 
-router.post('/', async (req: AuthRequest, res) => {
+router.post('/', requireOwner, async (req: AuthRequest, res) => {
   try {
     const { name, description, items } = req.body;
     const menu = await prisma.menu.create({
@@ -69,7 +71,7 @@ router.post('/', async (req: AuthRequest, res) => {
   }
 });
 
-router.put('/:id', async (req: AuthRequest, res) => {
+router.put('/:id', requireOwner, async (req: AuthRequest, res) => {
   try {
     const { name, description, isActive, items } = req.body;
 
@@ -102,7 +104,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
   }
 });
 
-router.delete('/:id', async (req: AuthRequest, res) => {
+router.delete('/:id', requireOwner, async (req: AuthRequest, res) => {
   try {
     await prisma.menu.delete({ where: { id: req.params.id as string, userId: req.userId! } });
     res.json({ success: true });

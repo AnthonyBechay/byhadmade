@@ -22,6 +22,7 @@ model User {
   ingredientCategories   IngredientCategory[]
   ingredientTags         IngredientTag[]
   receipts               Receipt[]
+  subAccounts            SubAccount[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 }
@@ -365,7 +366,7 @@ model Receipt {
   id            String         @id @default(cuid())
   userId        String
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  receiptDate   DateTime       @default(now()) // date on the receipt (editable by chef)
+  receivedAt    DateTime       @default(now()) // when the chef received it (date + time, editable)
   supplier      String?
   total         Float?
   currency      String         @default("USD")
@@ -377,7 +378,7 @@ model Receipt {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  @@index([userId, receiptDate])
+  @@index([userId, receivedAt])
 }
 
 model ReceiptItem {
@@ -395,4 +396,25 @@ model ReceiptItem {
 enum ReceiptStatus {
   PENDING
   CONFIRMED
+}
+
+// ─── Sub-accounts (employee logins under an owner user) ───
+// Owner can create up to 5. Sub-account scopes are enforced in middleware:
+// an empty allowed*Ids array = access to all of that type.
+
+model SubAccount {
+  id                  String   @id @default(cuid())
+  ownerId             String
+  owner               User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  email               String
+  password            String
+  name                String
+  isActive            Boolean  @default(true)
+  allowedMenuIds      String[] @default([])
+  allowedRestaurantIds String[] @default([])
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([ownerId, email])
+  @@index([email])
 }

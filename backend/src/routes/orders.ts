@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
 import path from 'path';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, restaurantScope, canAccessRestaurant, AuthRequest } from '../middleware/auth';
 import { uploadToR2, deleteFromR2 } from '../lib/r2';
 
 const router = Router();
@@ -31,7 +31,12 @@ router.get('/', async (req: AuthRequest, res) => {
     const restaurantId = req.query.restaurantId as string | undefined;
     const status = req.query.status as string | undefined;
     const where: any = { restaurant: { userId: req.userId! } };
-    if (restaurantId) where.restaurantId = restaurantId;
+    if (restaurantId) {
+      if (!canAccessRestaurant(req, restaurantId)) { res.json([]); return; }
+      where.restaurantId = restaurantId;
+    } else {
+      Object.assign(where, restaurantScope(req, 'restaurantId'));
+    }
     if (status) where.status = status;
 
     const orders = await prisma.order.findMany({
@@ -62,6 +67,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
       },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+    if (!canAccessRestaurant(req, order.restaurantId)) { res.status(404).json({ error: 'Order not found' }); return; }
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch order' });
@@ -73,6 +79,7 @@ router.post('/', async (req: AuthRequest, res) => {
   try {
     const { restaurantId, supplier, deliveryType, notes, items, orderDate } = req.body;
     if (!restaurantId) { res.status(400).json({ error: 'Restaurant is required' }); return; }
+    if (!canAccessRestaurant(req, restaurantId)) { res.status(403).json({ error: 'Not your restaurant' }); return; }
     const rest = await verifyRestaurant(restaurantId, req.userId!);
     if (!rest) { res.status(403).json({ error: 'Not your restaurant' }); return; }
     if (!items || items.length === 0) { res.status(400).json({ error: 'At least one item is required' }); return; }
@@ -111,6 +118,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
       where: { id, restaurant: { userId: req.userId! } },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+    if (!canAccessRestaurant(req, order.restaurantId)) { res.status(404).json({ error: 'Order not found' }); return; }
 
     const { status, deliveryType, totalPaid, currency, supplier, notes, items, isPaid } = req.body;
 
@@ -167,6 +175,7 @@ router.delete('/:id', async (req: AuthRequest, res) => {
       include: { photos: true },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+    if (!canAccessRestaurant(req, order.restaurantId)) { res.status(404).json({ error: 'Order not found' }); return; }
 
     // Delete R2 photos
     for (const photo of order.photos) {
@@ -188,6 +197,7 @@ router.post('/:id/photos', upload.array('photos', 10), async (req: AuthRequest, 
       where: { id, restaurant: { userId: req.userId! } },
     });
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+    if (!canAccessRestaurant(req, order.restaurantId)) { res.status(404).json({ error: 'Order not found' }); return; }
 
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) { res.status(400).json({ error: 'No files uploaded' }); return; }
@@ -235,6 +245,10 @@ router.delete('/photos/:photoId', async (req: AuthRequest, res) => {
     });
     if (!photo) { res.status(404).json({ error: 'Photo not found' }); return; }
     if (photo.order.restaurant.userId !== req.userId) {
+      res.status(404).json({ error: 'Photo not found' });
+      return;
+    }
+    if (!canAccessRestaurant(req, photo.order.restaurantId)) {
       res.status(404).json({ error: 'Photo not found' });
       return;
     }
