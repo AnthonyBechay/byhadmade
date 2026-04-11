@@ -68,15 +68,20 @@ function filterSections(me: MeResponse | null): NavSection[] {
   // empty list = no restriction (matches backend semantics)
   const hasAll = allowed.length === 0;
   return allSections
-    .map((s) => ({
-      ...s,
-      items: s.items.filter((it) => {
-        if (it.feature === '__owner__') return false; // sub-accounts never see Settings
-        if (hasAll) return true;
-        return it.feature ? allowed.includes(it.feature) : true;
-      }),
-    }))
-    .filter((s) => s.items.length > 0);
+    .map((s) => {
+      // Sub-accounts still get a "Settings" section on mobile, but it only
+      // contains the Sign Out action (rendered from the sheet itself).
+      if (s.key === 'settings') return { ...s, items: [] };
+      return {
+        ...s,
+        items: s.items.filter((it) => {
+          if (it.feature === '__owner__') return false;
+          if (hasAll) return true;
+          return it.feature ? allowed.includes(it.feature) : true;
+        }),
+      };
+    })
+    .filter((s) => s.key === 'settings' || s.items.length > 0);
 }
 
 function findSectionForPath(pathname: string, sections: NavSection[]): string | null {
@@ -218,10 +223,12 @@ export default function Layout() {
                     <span>{item.label}</span>
                   </NavLink>
                 ))}
-                <button className="mobile-sheet-link mobile-sheet-logout" onClick={handleLogout}>
-                  <LogOut size={20} />
-                  <span>Sign Out</span>
-                </button>
+                {section.key === 'settings' && (
+                  <button className="mobile-sheet-link mobile-sheet-logout" onClick={handleLogout}>
+                    <LogOut size={20} />
+                    <span>Sign Out</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

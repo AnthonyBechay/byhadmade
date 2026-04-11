@@ -67,18 +67,26 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
     const file = req.file;
     if (!file) { res.status(400).json({ error: 'No photo uploaded' }); return; }
 
-    // Run vision extraction + R2 upload in parallel to shave latency.
-    // Folder path uses a generic "pending" bucket while we wait for the supplier name;
-    // we rename/re-key afterwards isn't worth it — just store under date.
+    // Run vision extraction + R2 upload in parallel. The folder path is
+    // supplier-agnostic (date-based) so the upload doesn't have to wait for
+    // the extraction result — big latency win.
     const receivedAt = new Date(); // today — user can edit afterwards
     const dateSlug = receivedAt.toISOString().slice(0, 10);
     const ext = path.extname(file.originalname) || '.jpg';
 
-    const userPromise = prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: req.userId! },
       select: { name: true },
     });
+    const userSlug = (user?.name || 'user')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    const folderPath = `${userSlug}/traceability/${dateSlug}`;
 
+    const uploadPromise = uploadToR2(file.buffer, file.mimetype, folderPath, ext, {
+      label: 'receipt',
+    });
     const extractPromise = extractReceiptFromImage(file.buffer, file.mimetype).catch(
       (err: any) => {
         console.error('Vision extraction failed:', err);
@@ -86,23 +94,7 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
       },
     );
 
-    // Start upload immediately with a temporary supplier slug; we'll rewrite
-    // the receipt's photoUrl only if you ever want perfect folder hygiene.
-    const [user, extracted] = await Promise.all([userPromise, extractPromise]);
-
-    const userSlug = (user?.name || 'user')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    const supplierSlug = (extracted.supplier || 'no-supplier')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    const folderPath = `${userSlug}/traceability/${supplierSlug}/${dateSlug}`;
-
-    const photoUrl = await uploadToR2(file.buffer, file.mimetype, folderPath, ext, {
-      label: 'receipt',
-    });
+    const [photoUrl, extracted] = await Promise.all([uploadPromise, extractPromise]);
 
     const receipt = await prisma.receipt.create({
       data: {

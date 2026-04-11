@@ -287,11 +287,11 @@ export default function SettingsUsers() {
               </div>
             </div>
 
+            {restaurants.length > 0 && (
             <div className="form-field">
               <label>Allowed restaurants</label>
               <p className="form-hint">Leave empty to grant access to all restaurants.</p>
               <div className="chip-list">
-                {restaurants.length === 0 && <span className="form-hint">No restaurants yet.</span>}
                 {restaurants.map((r) => {
                   const on = form.allowedRestaurantIds.includes(r.id);
                   return (
@@ -307,12 +307,13 @@ export default function SettingsUsers() {
                 })}
               </div>
             </div>
+            )}
 
+            {menus.length > 0 && (
             <div className="form-field">
               <label>Allowed menus</label>
               <p className="form-hint">Leave empty to grant access to all menus.</p>
               <div className="chip-list">
-                {menus.length === 0 && <span className="form-hint">No menus yet.</span>}
                 {menus.map((m) => {
                   const on = form.allowedMenuIds.includes(m.id);
                   return (
@@ -328,6 +329,7 @@ export default function SettingsUsers() {
                 })}
               </div>
             </div>
+            )}
 
             {error && <div className="form-error">{error}</div>}
 
