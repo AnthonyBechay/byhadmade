@@ -17,6 +17,8 @@ import ingredientSettingsRoutes from './routes/ingredient-settings';
 import storageLocationRoutes from './routes/storage-locations';
 import traceabilityRoutes from './routes/traceability';
 import subAccountRoutes from './routes/sub-accounts';
+import checklistTemplateRoutes from './routes/checklist-templates';
+import checklistRunRoutes from './routes/checklist-runs';
 
 const prisma = new PrismaClient();
 
@@ -44,6 +46,8 @@ app.use('/api/ingredient-settings', ingredientSettingsRoutes);
 app.use('/api/storage-locations', storageLocationRoutes);
 app.use('/api/traceability', traceabilityRoutes);
 app.use('/api/sub-accounts', subAccountRoutes);
+app.use('/api/checklist-templates', checklistTemplateRoutes);
+app.use('/api/checklist-runs', checklistRunRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });

@@ -23,6 +23,8 @@ model User {
   ingredientTags         IngredientTag[]
   receipts               Receipt[]
   subAccounts            SubAccount[]
+  checklistTemplates     ChecklistTemplate[]
+  checklistRuns          ChecklistRun[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 }
@@ -396,6 +398,71 @@ model ReceiptItem {
 enum ReceiptStatus {
   PENDING
   CONFIRMED
+}
+
+// ─── Checklists ───
+
+enum ChecklistType {
+  OPENING
+  CLOSING
+  CUSTOM
+}
+
+model ChecklistTemplate {
+  id        String                 @id @default(cuid())
+  userId    String
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  type      ChecklistType          @default(CUSTOM)
+  theme     String?                // e.g. "Kitchen", "Floor", "Second Floor"
+  isActive  Boolean                @default(true)
+  sortOrder Int                    @default(0)
+  items     ChecklistTemplateItem[]
+  runs      ChecklistRun[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([userId, type])
+}
+
+model ChecklistTemplateItem {
+  id         String            @id @default(cuid())
+  templateId String
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  label      String
+  notes      String?
+  order      Int               @default(0)
+  required   Boolean           @default(true)
+  createdAt  DateTime          @default(now())
+}
+
+model ChecklistRun {
+  id         String           @id @default(cuid())
+  templateId String
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime         // midnight UTC of the day this run belongs to
+  items      ChecklistRunItem[]
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([templateId, date])
+  @@index([userId, date])
+}
+
+model ChecklistRunItem {
+  id             String       @id @default(cuid())
+  runId          String
+  run            ChecklistRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  templateItemId String
+  label          String
+  notes          String?
+  required       Boolean      @default(true)
+  order          Int          @default(0)
+  checked        Boolean      @default(false)
+  checkedAt      DateTime?
+  createdAt      DateTime     @default(now())
 }
 
 // ─── Sub-accounts (employee logins under an owner user) ───

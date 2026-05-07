@@ -13,6 +13,7 @@ import Salaries from './pages/Salaries';
 import PublicSchedule from './pages/PublicSchedule';
 import Orders from './pages/Orders';
 import Traceability from './pages/Traceability';
+import Checklist from './pages/Checklist';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
 
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="scheduling/salaries/:restaurantId" element={<Salaries />} />
           <Route path="orders" element={<Orders />} />
           <Route path="traceability" element={<Traceability />} />
+          <Route path="checklists" element={<Checklist />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

@@ -25,6 +25,7 @@ const FEATURES: { key: string; label: string; desc: string }[] = [
   { key: 'schedules', label: 'Schedules', desc: 'Employees and weekly schedules' },
   { key: 'orders', label: 'Orders', desc: 'Supplier order management' },
   { key: 'traceability', label: 'Traceability', desc: 'Daily receipts and receipt capture' },
+  { key: 'checklists', label: 'Checklists', desc: 'Daily opening/closing checklists' },
 ];
 
 export default function SettingsUsers() {
