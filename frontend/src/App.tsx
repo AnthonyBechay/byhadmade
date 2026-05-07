@@ -14,6 +14,7 @@ import PublicSchedule from './pages/PublicSchedule';
 import Orders from './pages/Orders';
 import Traceability from './pages/Traceability';
 import Checklist from './pages/Checklist';
+import Temperature from './pages/Temperature';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
 
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="orders" element={<Orders />} />
           <Route path="traceability" element={<Traceability />} />
           <Route path="checklists" element={<Checklist />} />
+          <Route path="temperatures" element={<Temperature />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

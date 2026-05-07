@@ -25,6 +25,8 @@ model User {
   subAccounts            SubAccount[]
   checklistTemplates     ChecklistTemplate[]
   checklistRuns          ChecklistRun[]
+  tempDevices            TempDevice[]
+  tempLogs               TempLog[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 }
@@ -463,6 +465,61 @@ model ChecklistRunItem {
   checked        Boolean      @default(false)
   checkedAt      DateTime?
   createdAt      DateTime     @default(now())
+}
+
+// ─── Temperature Monitoring ───
+
+enum TempUnit {
+  CELSIUS
+  FAHRENHEIT
+}
+
+enum TempDeviceType {
+  FRIDGE
+  FREEZER
+  COLD_ROOM
+  WINE_CELLAR
+  OVEN
+  WARMER
+  OTHER
+}
+
+model TempDevice {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  location    String?        // e.g. "Kitchen", "Storage Room", "Bar"
+  deviceType  TempDeviceType @default(FRIDGE)
+  minTemp     Float          // acceptable minimum
+  maxTemp     Float          // acceptable maximum
+  targetTemp  Float?         // ideal target (shown as reference)
+  unit        TempUnit       @default(CELSIUS)
+  notes       String?
+  isActive    Boolean        @default(true)
+  logs        TempLog[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId])
+}
+
+model TempLog {
+  id           String     @id @default(cuid())
+  deviceId     String
+  device       TempDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date         DateTime   // midnight UTC of the day
+  temp         Float
+  isAutoFilled Boolean    @default(false)
+  notes        String?
+  loggedAt     DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+
+  @@unique([deviceId, date])
+  @@index([userId, date])
+  @@index([deviceId, date])
 }
 
 // ─── Sub-accounts (employee logins under an owner user) ───

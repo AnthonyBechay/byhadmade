@@ -19,6 +19,8 @@ import traceabilityRoutes from './routes/traceability';
 import subAccountRoutes from './routes/sub-accounts';
 import checklistTemplateRoutes from './routes/checklist-templates';
 import checklistRunRoutes from './routes/checklist-runs';
+import tempDeviceRoutes from './routes/temp-devices';
+import tempLogRoutes from './routes/temp-logs';
 
 const prisma = new PrismaClient();
 
@@ -48,6 +50,8 @@ app.use('/api/traceability', traceabilityRoutes);
 app.use('/api/sub-accounts', subAccountRoutes);
 app.use('/api/checklist-templates', checklistTemplateRoutes);
 app.use('/api/checklist-runs', checklistRunRoutes);
+app.use('/api/temp-devices', tempDeviceRoutes);
+app.use('/api/temp-logs', tempLogRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });

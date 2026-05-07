@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ChefHat, UtensilsCrossed, Salad, CalendarDays, Package,
-  ScanLine, Settings, LogOut, BookOpen, Users, ClipboardList, X, CheckSquare,
+  ScanLine, Settings, LogOut, BookOpen, Users, ClipboardList, X, CheckSquare, Thermometer,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import './Layout.css';
@@ -44,6 +44,7 @@ const allSections: NavSection[] = [
       { to: '/app/orders', icon: Package, label: 'Orders', feature: 'orders' },
       { to: '/app/traceability', icon: ScanLine, label: 'Traceability', feature: 'traceability' },
       { to: '/app/checklists', icon: CheckSquare, label: 'Checklists', feature: 'checklists' },
+      { to: '/app/temperatures', icon: Thermometer, label: 'Temperature', feature: 'temperatures' },
     ],
   },
   {

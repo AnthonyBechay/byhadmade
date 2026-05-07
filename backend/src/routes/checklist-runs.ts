@@ -57,6 +57,54 @@ router.get('/', async (req: AuthRequest, res) => {
             },
             include: { items: { orderBy: { order: 'asc' } } },
           });
+        } else {
+          // Sync run items with current template items:
+          // 1. Add items that are in the template but not yet in the run
+          // 2. Update labels/notes for existing items (template may have been edited)
+          // 3. Remove run items whose templateItemId no longer exists in the template
+          const existingTemplateIds = new Set(run.items.map((i) => i.templateItemId));
+          const currentTemplateIds = new Set(template.items.map((i) => i.id));
+
+          // Remove orphaned run items
+          const orphanedIds = run.items
+            .filter((i) => !currentTemplateIds.has(i.templateItemId))
+            .map((i) => i.id);
+          if (orphanedIds.length) {
+            await prisma.checklistRunItem.deleteMany({ where: { id: { in: orphanedIds } } });
+          }
+
+          // Add missing items
+          const missingItems = template.items.filter((it) => !existingTemplateIds.has(it.id));
+          if (missingItems.length) {
+            await prisma.checklistRunItem.createMany({
+              data: missingItems.map((it) => ({
+                runId: run!.id,
+                templateItemId: it.id,
+                label: it.label,
+                notes: it.notes,
+                required: it.required,
+                order: it.order,
+                checked: false,
+              })),
+            });
+          }
+
+          // Update labels/notes for existing items (template may have been renamed)
+          for (const tplItem of template.items) {
+            const runItem = run.items.find((i) => i.templateItemId === tplItem.id);
+            if (runItem && (runItem.label !== tplItem.label || runItem.notes !== tplItem.notes)) {
+              await prisma.checklistRunItem.update({
+                where: { id: runItem.id },
+                data: { label: tplItem.label, notes: tplItem.notes, required: tplItem.required, order: tplItem.order },
+              });
+            }
+          }
+
+          // Reload to get clean sorted state
+          run = await prisma.checklistRun.findUnique({
+            where: { templateId_date: { templateId: template.id, date } },
+            include: { items: { orderBy: { order: 'asc' } } },
+          }) as typeof run;
         }
 
         return {

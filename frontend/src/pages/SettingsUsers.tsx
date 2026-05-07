@@ -26,6 +26,7 @@ const FEATURES: { key: string; label: string; desc: string }[] = [
   { key: 'orders', label: 'Orders', desc: 'Supplier order management' },
   { key: 'traceability', label: 'Traceability', desc: 'Daily receipts and receipt capture' },
   { key: 'checklists', label: 'Checklists', desc: 'Daily opening/closing checklists' },
+  { key: 'temperatures', label: 'Temperature', desc: 'Device temperature monitoring' },
 ];
 
 export default function SettingsUsers() {
