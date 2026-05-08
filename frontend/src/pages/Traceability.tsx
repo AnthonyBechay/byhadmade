@@ -292,15 +292,16 @@ export default function Traceability() {
 
   // ─── Supplementary photos ───
   const handleAddPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+    // Materialize the file array BEFORE clearing the input value —
+    // FileList is live-bound to the input, so resetting value first wipes it.
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!files || !files.length || !editReceipt) return;
+    if (!files.length || !editReceipt) return;
     setAddingPhotos(true);
     setAddPhotosError('');
     try {
-      // Compress all selected files
       const compressed: File[] = await Promise.all(
-        Array.from(files).map(async (f) => {
+        files.map(async (f) => {
           const blob = await compressImage(f);
           return new File([blob], f.name.replace(/\.[^.]+$/, '.jpg') || 'doc.jpg', { type: 'image/jpeg' });
         }),
