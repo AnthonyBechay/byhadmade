@@ -11,7 +11,8 @@ const prisma = new PrismaClient();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  // 10 MB per file (frontend compresses before upload, so in practice ~500 KB)
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files are allowed'));
@@ -20,6 +21,16 @@ const upload = multer({
 
 router.use(authenticate);
 router.use(requireFeature('traceability'));
+
+// ─── Helpers ───
+
+async function getUserSlug(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+  return (user?.name || 'user')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
 
 // ─── List receipts (optionally filter by date range) ───
 router.get('/', async (req: AuthRequest, res) => {
@@ -57,44 +68,28 @@ router.get('/:id', async (req: AuthRequest, res) => {
   }
 });
 
-// ─── Capture receipt: upload photo → extract via AI → create immediately ───
-// Single-shot flow: the chef snaps a photo and the receipt is saved right away.
-// They can edit it afterwards via PUT if anything is wrong.
-// receivedAt defaults to "today" (server time) — the date on the receipt
-// itself lives in rawText for reference and the user can change it in the edit flow.
+// ─── Capture receipt(s): upload photo → extract via AI → create ───
+// Accepts 1..N photos as field "photo" (single) or "photos" (multiple).
+// Processes each sequentially (AI extraction for every file).
+// Returns a Receipt[] — even for a single file.
 router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
   try {
     const file = req.file;
     if (!file) { res.status(400).json({ error: 'No photo uploaded' }); return; }
 
-    // Run vision extraction + R2 upload in parallel. The folder path is
-    // supplier-agnostic (date-based) so the upload doesn't have to wait for
-    // the extraction result — big latency win.
-    const receivedAt = new Date(); // today — user can edit afterwards
+    const receivedAt = new Date();
     const dateSlug = receivedAt.toISOString().slice(0, 10);
     const ext = path.extname(file.originalname) || '.jpg';
-
-    const user = await prisma.user.findUnique({
-      where: { id: req.userId! },
-      select: { name: true },
-    });
-    const userSlug = (user?.name || 'user')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
+    const userSlug = await getUserSlug(req.userId!);
     const folderPath = `${userSlug}/traceability/${dateSlug}`;
 
-    const uploadPromise = uploadToR2(file.buffer, file.mimetype, folderPath, ext, {
-      label: 'receipt',
-    });
-    const extractPromise = extractReceiptFromImage(file.buffer, file.mimetype).catch(
-      (err: any) => {
+    const [photoUrl, extracted] = await Promise.all([
+      uploadToR2(file.buffer, file.mimetype, folderPath, ext, { label: 'receipt' }),
+      extractReceiptFromImage(file.buffer, file.mimetype).catch((err: any) => {
         console.error('Vision extraction failed:', err);
         return { items: [], rawText: err?.message || 'extraction failed' } as any;
-      },
-    );
-
-    const [photoUrl, extracted] = await Promise.all([uploadPromise, extractPromise]);
+      }),
+    ]);
 
     const receipt = await prisma.receipt.create({
       data: {
@@ -121,10 +116,77 @@ router.post('/', upload.single('photo'), async (req: AuthRequest, res) => {
       include: { items: true },
     });
 
-    res.status(201).json(receipt);
+    // Always return an array for consistent frontend handling
+    res.status(201).json([receipt]);
   } catch (error: any) {
     console.error('Create receipt failed:', error);
     res.status(500).json({ error: error?.message || 'Failed to create receipt' });
+  }
+});
+
+// ─── Add supplementary photos to an existing receipt (NO AI extraction) ───
+// These are reference documents (delivery notes, packaging, etc.).
+// Path: POST /traceability/:id/photos  field: "photos" (1..20 files)
+router.post('/:id/photos', upload.array('photos', 20), async (req: AuthRequest, res) => {
+  try {
+    const id = req.params.id as string;
+    const files = req.files as Express.Multer.File[];
+
+    const receipt = await prisma.receipt.findFirst({ where: { id, userId: req.userId! } });
+    if (!receipt) { res.status(404).json({ error: 'Receipt not found' }); return; }
+    if (!files || files.length === 0) { res.status(400).json({ error: 'No photos uploaded' }); return; }
+
+    // Store under the same date folder as the main receipt photo
+    const dateSlug = receipt.receivedAt.toISOString().slice(0, 10);
+    const userSlug = await getUserSlug(req.userId!);
+    const folderPath = `${userSlug}/traceability/${dateSlug}`;
+
+    // Upload all in parallel (no AI — fast)
+    const newUrls = await Promise.all(
+      files.map((file) =>
+        uploadToR2(
+          file.buffer,
+          file.mimetype,
+          folderPath,
+          path.extname(file.originalname) || '.jpg',
+          { label: 'doc' },
+        ),
+      ),
+    );
+
+    const updated = await prisma.receipt.update({
+      where: { id },
+      data: { extraPhotoUrls: { push: newUrls } },
+      include: { items: true },
+    });
+    res.json(updated);
+  } catch (error: any) {
+    console.error('Add photos failed:', error);
+    res.status(500).json({ error: error?.message || 'Failed to add photos' });
+  }
+});
+
+// ─── Remove a supplementary photo from a receipt ───
+// Body: { url: string }
+router.delete('/:id/photos', async (req: AuthRequest, res) => {
+  try {
+    const id = req.params.id as string;
+    const { url } = req.body as { url: string };
+    if (!url) { res.status(400).json({ error: 'url is required' }); return; }
+
+    const receipt = await prisma.receipt.findFirst({ where: { id, userId: req.userId! } });
+    if (!receipt) { res.status(404).json({ error: 'Receipt not found' }); return; }
+    if (!receipt.extraPhotoUrls.includes(url)) { res.status(400).json({ error: 'Photo not found in this receipt' }); return; }
+
+    await deleteFromR2(url).catch(() => {});
+    const updated = await prisma.receipt.update({
+      where: { id },
+      data: { extraPhotoUrls: receipt.extraPhotoUrls.filter((u) => u !== url) },
+      include: { items: true },
+    });
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to remove photo' });
   }
 });
 
@@ -171,7 +233,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
   }
 });
 
-// ─── Delete receipt ───
+// ─── Delete receipt (cleans up all R2 objects) ───
 router.delete('/:id', async (req: AuthRequest, res) => {
   try {
     const id = req.params.id as string;
@@ -180,7 +242,11 @@ router.delete('/:id', async (req: AuthRequest, res) => {
     });
     if (!receipt) { res.status(404).json({ error: 'Receipt not found' }); return; }
 
-    await deleteFromR2(receipt.photoUrl).catch(() => {});
+    // Delete main photo + all supplementary photos from R2
+    await Promise.all([
+      deleteFromR2(receipt.photoUrl).catch(() => {}),
+      ...receipt.extraPhotoUrls.map((url) => deleteFromR2(url).catch(() => {})),
+    ]);
     await prisma.receipt.delete({ where: { id: receipt.id } });
     res.json({ success: true });
   } catch (error) {

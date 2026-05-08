@@ -27,12 +27,15 @@ function randomInRange(min: number, max: number): number {
 
 type TempStatus = 'ok' | 'warning' | 'danger';
 
+// Warning zone: within 2 °C (or 3.6 °F) of the boundary but still outside range.
+// Anything further out is danger (red).
+const WARNING_BUFFER: Record<string, number> = { CELSIUS: 2, FAHRENHEIT: 3.6 };
+
 function calcStatus(temp: number, device: TempDevice): TempStatus {
   if (temp >= device.minTemp && temp <= device.maxTemp) return 'ok';
-  const range = device.maxTemp - device.minTemp;
-  const threshold = range * 0.10;
+  const buffer = WARNING_BUFFER[device.unit] ?? 2;
   const deviation = temp < device.minTemp ? device.minTemp - temp : temp - device.maxTemp;
-  return deviation <= threshold ? 'warning' : 'danger';
+  return deviation <= buffer ? 'warning' : 'danger';
 }
 
 // Count consecutive days (backwards from date) where status != 'ok'
@@ -69,17 +72,21 @@ async function autoFillPastLogs(device: TempDevice, userId: string) {
     device.createdAt.getFullYear(), device.createdAt.getMonth(), device.createdAt.getDate(),
   ));
 
-  // Find all existing log dates for this device
+  // Auto-fill only strictly past days (not today — user should enter today's manually)
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (deviceCreated > yesterday) return; // device created today, nothing to fill
+
   const existing = await prisma.tempLog.findMany({
-    where: { deviceId: device.id, date: { gte: deviceCreated, lte: today } },
+    where: { deviceId: device.id, date: { gte: deviceCreated, lte: yesterday } },
     select: { date: true },
   });
   const existingDates = new Set(existing.map((l) => l.date.getTime()));
 
-  // Build list of missing dates
+  // Build list of missing dates (past days only, not today)
   const missing: { deviceId: string; userId: string; date: Date; temp: number; isAutoFilled: boolean }[] = [];
   const cur = new Date(deviceCreated);
-  while (cur <= today) {
+  while (cur <= yesterday) {
     if (!existingDates.has(cur.getTime())) {
       missing.push({
         deviceId: device.id,
@@ -104,15 +111,14 @@ router.get('/', async (req: AuthRequest, res) => {
     const dateStr = (req.query.date as string) || new Date().toISOString().slice(0, 10);
     const date = toDateUTC(dateStr);
     const userId = req.userId!;
-    const isToday = date.getTime() === todayUTC().getTime();
-    const isPast = date <= todayUTC();
+    const isPast = date < todayUTC(); // strictly past; today stays empty until user logs
 
     const devices = await prisma.tempDevice.findMany({
       where: { userId, isActive: true },
       orderBy: [{ location: 'asc' }, { name: 'asc' }],
     });
 
-    // For past dates (including today), auto-fill any missing logs
+    // Auto-fill only past days (never today)
     if (isPast) {
       for (const device of devices) {
         await autoFillPastLogs(device, userId);

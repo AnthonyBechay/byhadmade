@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ScanLine, Camera, Trash2, Plus, X, FileText, Edit3,
   ChevronDown, ChevronRight, Calendar, Loader2, Image as ImageIcon,
-  CheckCircle, Save,
+  CheckCircle, Save, Images,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
@@ -25,6 +25,7 @@ interface Receipt {
   total: number | null;
   currency: string;
   photoUrl: string;
+  extraPhotoUrls: string[];
   rawText: string | null;
   notes: string | null;
   status: string;
@@ -69,29 +70,57 @@ function formatDateLabel(iso: string) {
 }
 
 function dateKey(iso: string) {
-  // Group by *local* date, not UTC
   const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-// Convert ISO string to value usable by <input type="datetime-local" />
 function toLocalDatetimeInput(iso: string) {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// ─── Image compression (client-side, before upload) ───
+// Resizes to max 1600px on the longest side and encodes as JPEG at 75% quality.
+// Typical result: 3 MB HEIC/PNG → ~250–500 KB JPEG (6–10× reduction).
+async function compressImage(file: File, maxDim = 1600, quality = 0.75): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      if (w > maxDim || h > maxDim) {
+        if (w >= h) { h = Math.round((h / w) * maxDim); w = maxDim; }
+        else        { w = Math.round((w / h) * maxDim); h = maxDim; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('Canvas not available')); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('Compression failed'))),
+        'image/jpeg',
+        quality,
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Failed to load image')); };
+    img.src = objectUrl;
+  });
+}
+
 export default function Traceability() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
-  const [capturing, setCapturing] = useState(false);
+  // captureProgress: null = idle, {current, total} = in progress
+  const [captureProgress, setCaptureProgress] = useState<{ current: number; total: number } | null>(null);
   const [captureError, setCaptureError] = useState('');
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
@@ -109,8 +138,15 @@ export default function Traceability() {
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
+  // Supplementary photos state (inside edit modal)
+  const [addingPhotos, setAddingPhotos] = useState(false);
+  const [addPhotosError, setAddPhotosError] = useState('');
+
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const addPhotosInputRef = useRef<HTMLInputElement>(null);
+
+  const capturing = captureProgress !== null;
 
   useEffect(() => { load(); }, []);
 
@@ -126,40 +162,63 @@ export default function Traceability() {
     }
   };
 
-  // ─── Capture flow: single shot, creates immediately ───
-  const handleFile = async (file: File) => {
-    setCapturing(true);
-    setCaptureError('');
-    try {
-      const fd = new FormData();
-      fd.append('photo', file);
-      const token = localStorage.getItem('token');
-      const res = await fetch((import.meta.env.VITE_API_URL || '/api') + '/traceability', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: fd,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Capture failed');
-      }
-      const created: Receipt = await res.json();
-      setReceipts((prev) => [created, ...prev]);
-      setJustCreatedId(created.id);
-      // auto-expand today's group so the new one is visible
-      setExpanded((p) => ({ ...p, [dateKey(created.receivedAt)]: true }));
-      // clear the highlight after a moment
-      setTimeout(() => setJustCreatedId((id) => (id === created.id ? null : id)), 2500);
-    } catch (err: any) {
-      setCaptureError(err.message || 'Could not capture receipt');
-    } finally {
-      setCapturing(false);
+  // ─── Capture: compress + upload a single file, returns the created receipt ───
+  const captureOne = async (file: File): Promise<Receipt> => {
+    const compressed = await compressImage(file);
+    const fd = new FormData();
+    // Append as JPEG; keep a reasonable filename
+    const fname = file.name.replace(/\.[^.]+$/, '.jpg') || 'receipt.jpg';
+    fd.append('photo', compressed, fname);
+
+    const token = localStorage.getItem('token');
+    const apiBase = (import.meta as any).env.VITE_API_URL || '/api';
+    const res = await fetch(`${apiBase}/traceability`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Capture failed');
     }
+    // Backend always returns Receipt[]
+    const arr: Receipt[] = await res.json();
+    return arr[0];
+  };
+
+  // ─── Sequential multi-file processing ───
+  const handleFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (!list.length) return;
+    setCaptureProgress({ current: 0, total: list.length });
+    setCaptureError('');
+
+    const errors: string[] = [];
+    let lastCreated: Receipt | null = null;
+
+    for (let i = 0; i < list.length; i++) {
+      setCaptureProgress({ current: i + 1, total: list.length });
+      try {
+        const receipt = await captureOne(list[i]);
+        lastCreated = receipt;
+        setReceipts((prev) => [receipt, ...prev]);
+        setExpanded((p) => ({ ...p, [dateKey(receipt.receivedAt)]: true }));
+      } catch (err: any) {
+        errors.push(list.length > 1 ? `Photo ${i + 1}: ${err.message}` : err.message);
+      }
+    }
+
+    if (lastCreated) {
+      setJustCreatedId(lastCreated.id);
+      setTimeout(() => setJustCreatedId((id) => (id === lastCreated!.id ? null : id)), 2500);
+    }
+    if (errors.length) setCaptureError(errors.join(' • '));
+    setCaptureProgress(null);
   };
 
   const onCameraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    const files = e.target.files;
+    if (files && files.length) handleFiles(files);
     e.target.value = '';
   };
 
@@ -167,18 +226,19 @@ export default function Traceability() {
   const openEdit = (r: Receipt) => {
     setEditReceipt(r);
     setEditSupplier(r.supplier || '');
-    // datetime-local needs "YYYY-MM-DDTHH:mm" in local time
     setEditDate(toLocalDatetimeInput(r.receivedAt));
     setEditCurrency(r.currency || 'USD');
     setEditTotal(r.total != null ? String(r.total) : '');
     setEditNotes(r.notes || '');
     setEditItems(r.items.length ? r.items.map(toDraft) : [{ ...EMPTY_ITEM }]);
     setEditError('');
+    setAddPhotosError('');
   };
 
   const closeEdit = () => {
     setEditReceipt(null);
     setEditError('');
+    setAddPhotosError('');
   };
 
   const updateEditItem = (idx: number, patch: Partial<DraftItem>) => {
@@ -230,6 +290,42 @@ export default function Traceability() {
     }
   };
 
+  // ─── Supplementary photos ───
+  const handleAddPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    e.target.value = '';
+    if (!files || !files.length || !editReceipt) return;
+    setAddingPhotos(true);
+    setAddPhotosError('');
+    try {
+      // Compress all selected files
+      const compressed: File[] = await Promise.all(
+        Array.from(files).map(async (f) => {
+          const blob = await compressImage(f);
+          return new File([blob], f.name.replace(/\.[^.]+$/, '.jpg') || 'doc.jpg', { type: 'image/jpeg' });
+        }),
+      );
+      const updated: Receipt = await api.uploadFiles(`/traceability/${editReceipt.id}/photos`, compressed, 'photos');
+      setEditReceipt(updated);
+      setReceipts((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (err: any) {
+      setAddPhotosError(err.message || 'Failed to upload photos');
+    } finally {
+      setAddingPhotos(false);
+    }
+  };
+
+  const removeExtraPhoto = async (url: string) => {
+    if (!editReceipt) return;
+    try {
+      const updated: Receipt = await api.delete(`/traceability/${editReceipt.id}/photos`, { url });
+      setEditReceipt(updated);
+      setReceipts((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (err: any) {
+      setAddPhotosError(err.message || 'Failed to remove photo');
+    }
+  };
+
   // Group receipts by date
   const grouped: Record<string, Receipt[]> = {};
   for (const r of receipts) {
@@ -255,7 +351,7 @@ export default function Traceability() {
             <div className="tr-capture-icon"><ScanLine size={36} /></div>
             <div className="tr-capture-text">
               <h2>Capture a receipt</h2>
-              <p>Point your phone at the receipt and it's done.</p>
+              <p>Point your phone at the receipt and it's done. Select multiple photos to process them in one go.</p>
             </div>
             <div className="tr-capture-actions">
               <button className="btn btn-primary btn-lg" onClick={() => cameraInputRef.current?.click()}>
@@ -269,10 +365,15 @@ export default function Traceability() {
         ) : (
           <div className="tr-capture-busy">
             <Loader2 size={40} className="spin" />
-            <h2>Reading receipt…</h2>
+            <h2>
+              {captureProgress && captureProgress.total > 1
+                ? `Reading receipt ${captureProgress.current} of ${captureProgress.total}…`
+                : 'Reading receipt…'}
+            </h2>
             <p>Extracting items, this only takes a moment.</p>
           </div>
         )}
+        {/* Camera: single capture */}
         <input
           ref={cameraInputRef}
           type="file"
@@ -281,10 +382,12 @@ export default function Traceability() {
           style={{ display: 'none' }}
           onChange={onCameraChange}
         />
+        {/* Upload: multiple allowed */}
         <input
           ref={uploadInputRef}
           type="file"
           accept="image/*"
+          multiple
           style={{ display: 'none' }}
           onChange={onCameraChange}
         />
@@ -332,6 +435,7 @@ export default function Traceability() {
                 <div className="tr-day-body">
                   {day.map((r) => {
                     const itemCount = r.items.length;
+                    const extraCount = (r.extraPhotoUrls || []).length;
                     const highlight = r.id === justCreatedId;
                     return (
                       <div
@@ -348,6 +452,11 @@ export default function Traceability() {
                           />
                           {highlight && (
                             <div className="tr-new-badge"><CheckCircle size={14} /> New</div>
+                          )}
+                          {extraCount > 0 && (
+                            <div className="tr-extra-photos-badge">
+                              <Images size={10} /> +{extraCount}
+                            </div>
                           )}
                         </div>
                         <div className="tr-receipt-info">
@@ -397,12 +506,63 @@ export default function Traceability() {
       {editReceipt && (
         <Modal isOpen={true} onClose={closeEdit} title="Edit receipt" width="780px">
           <div className="tr-edit">
-            <img
-              src={editReceipt.photoUrl}
-              alt="Receipt"
-              className="tr-edit-photo"
-              onClick={() => setPhotoPreview(editReceipt.photoUrl)}
-            />
+
+            {/* ── Photo gallery ── */}
+            <div className="tr-photo-gallery-section">
+              <div className="tr-photo-gallery-label">
+                <span>Photos</span>
+                {addingPhotos && <span className="tr-gallery-uploading"><Loader2 size={13} className="spin" /> Uploading…</span>}
+              </div>
+              <div className="tr-photo-gallery">
+                {/* Main receipt photo (non-deletable) */}
+                <div className="tr-gallery-item tr-gallery-main">
+                  <img
+                    src={editReceipt.photoUrl}
+                    alt="Receipt"
+                    onClick={() => setPhotoPreview(editReceipt.photoUrl)}
+                  />
+                  <div className="tr-gallery-main-label">Receipt</div>
+                </div>
+
+                {/* Supplementary photos */}
+                {(editReceipt.extraPhotoUrls || []).map((url, i) => (
+                  <div key={url} className="tr-gallery-item">
+                    <img
+                      src={url}
+                      alt={`Document ${i + 1}`}
+                      onClick={() => setPhotoPreview(url)}
+                    />
+                    <button
+                      className="tr-gallery-delete-btn"
+                      title="Remove this photo"
+                      onClick={() => removeExtraPhoto(url)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Add more photos button */}
+                <button
+                  className="tr-gallery-add-btn"
+                  onClick={() => addPhotosInputRef.current?.click()}
+                  disabled={addingPhotos}
+                  title="Add supplementary documents (no AI extraction)"
+                >
+                  <Plus size={18} />
+                  <span>Add docs</span>
+                </button>
+                <input
+                  ref={addPhotosInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleAddPhotos}
+                />
+              </div>
+              {addPhotosError && <div className="tr-error" style={{ marginTop: '0.4rem' }}>{addPhotosError}</div>}
+            </div>
 
             <div className="tr-form-row">
               <div className="form-field">

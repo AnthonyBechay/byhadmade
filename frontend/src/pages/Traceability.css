@@ -331,6 +331,128 @@
   border-color: #d4a035;
 }
 
+/* ── Photo gallery (edit modal) ── */
+.tr-photo-gallery-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.tr-photo-gallery-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tr-gallery-uploading {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #d4a035;
+  font-size: 0.78rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tr-photo-gallery {
+  display: flex;
+  gap: 0.6rem;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+}
+.tr-gallery-item {
+  position: relative;
+  flex-shrink: 0;
+  width: 110px;
+  height: 82px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+.tr-gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+  display: block;
+}
+.tr-gallery-main {
+  border-color: rgba(212, 160, 53, 0.5);
+}
+.tr-gallery-main-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  text-align: center;
+}
+.tr-gallery-delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tr-gallery-item:hover .tr-gallery-delete-btn {
+  opacity: 1;
+}
+.tr-gallery-delete-btn:hover { background: rgba(200, 50, 50, 0.85); }
+.tr-gallery-add-btn {
+  flex-shrink: 0;
+  width: 80px;
+  height: 82px;
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  background: transparent;
+  transition: border-color 0.15s, color 0.15s;
+}
+.tr-gallery-add-btn:hover:not(:disabled) {
+  border-color: #d4a035;
+  color: #d4a035;
+}
+.tr-gallery-add-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Badge on receipt card thumbnail: shows count of extra photos */
+.tr-extra-photos-badge {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.68rem;
+  border-radius: 4px;
+  padding: 1px 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
 .tr-items-header {
   display: flex;
   justify-content: space-between;

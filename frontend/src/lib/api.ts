@@ -78,7 +78,7 @@ export const api = {
   post: (path: string, data: any) => request(path, { method: 'POST', body: JSON.stringify(data) }),
   put: (path: string, data: any) => request(path, { method: 'PUT', body: JSON.stringify(data) }),
   patch: (path: string, data: any) => request(path, { method: 'PATCH', body: JSON.stringify(data) }),
-  delete: (path: string) => request(path, { method: 'DELETE' }),
+  delete: (path: string, data?: any) => request(path, { method: 'DELETE', ...(data ? { body: JSON.stringify(data) } : {}) }),
   upload: uploadFile,
   uploadFiles,
 };

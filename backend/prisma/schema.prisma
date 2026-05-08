@@ -374,13 +374,14 @@ model Receipt {
   supplier      String?
   total         Float?
   currency      String         @default("USD")
-  photoUrl      String
-  rawText       String?        // raw text returned by vision model
-  notes         String?
-  status        ReceiptStatus  @default(CONFIRMED)
-  items         ReceiptItem[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  photoUrl       String
+  extraPhotoUrls String[]       @default([]) // supplementary docs — not AI-processed
+  rawText        String?        // raw text returned by vision model
+  notes          String?
+  status         ReceiptStatus  @default(CONFIRMED)
+  items          ReceiptItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([userId, receivedAt])
 }

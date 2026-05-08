@@ -86,8 +86,6 @@ function DailyView() {
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState<Set<string>>(new Set());
-  const [saved, setSaved] = useState<Set<string>>(new Set());
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const load = useCallback(async (d: Date) => {
@@ -101,7 +99,6 @@ function DailyView() {
         if (e.log) vals[e.device.id] = String(e.log.temp);
       }
       setInputValues(vals);
-      setSaved(new Set());
     } finally {
       setLoading(false);
     }
@@ -109,43 +106,34 @@ function DailyView() {
 
   useEffect(() => { load(date); }, [date, load]);
 
+  // Client-side status mirrors backend: fixed 2 °C / 3.6 °F warning buffer
+  const clientStatus = (temp: number, device: Device, days: number): TempStatus => {
+    if (temp >= device.minTemp && temp <= device.maxTemp) return 'ok';
+    const buffer = device.unit === 'CELSIUS' ? 2 : 3.6;
+    const deviation = temp < device.minTemp ? device.minTemp - temp : temp - device.maxTemp;
+    const base: TempStatus = deviation <= buffer ? 'warning' : 'danger';
+    return base === 'warning' && days >= 7 ? 'chronic' : base;
+  };
+
   const saveTemp = async (entry: DailyEntry, value: string) => {
     const temp = parseFloat(value);
     if (isNaN(temp)) return;
     const deviceId = entry.device.id;
-    setSaving((p) => new Set(p).add(deviceId));
     try {
       const log = await api.post('/temp-logs', {
-        deviceId,
-        date: toDateStr(date),
-        temp,
-        notes: entry.log?.notes ?? null,
+        deviceId, date: toDateStr(date), temp, notes: entry.log?.notes ?? null,
       });
-      // Update entry in state
       setEntries((prev) =>
-        prev.map((e) => {
-          if (e.device.id !== deviceId) return e;
-          // Recompute status client-side for instant feedback
-          const d = e.device;
-          let status: TempStatus = 'ok';
-          if (temp < d.minTemp || temp > d.maxTemp) {
-            const range = d.maxTemp - d.minTemp;
-            const dev = temp < d.minTemp ? d.minTemp - temp : temp - d.maxTemp;
-            status = dev <= range * 0.1 ? (e.consecutiveDaysOutOfRange >= 7 ? 'chronic' : 'warning') : 'danger';
-          }
-          return { ...e, log, status };
+        prev.map((e) => e.device.id !== deviceId ? e : {
+          ...e, log, status: clientStatus(temp, e.device, e.consecutiveDaysOutOfRange),
         }),
       );
-      setSaved((p) => new Set(p).add(deviceId));
-      setTimeout(() => setSaved((p) => { const n = new Set(p); n.delete(deviceId); return n; }), 2000);
-    } catch { /* silent */ } finally {
-      setSaving((p) => { const n = new Set(p); n.delete(deviceId); return n; });
-    }
+    } catch { /* silent */ }
   };
 
   const handleInput = (entry: DailyEntry, value: string) => {
     setInputValues((p) => ({ ...p, [entry.device.id]: value }));
-    // Debounce auto-save: 800ms after user stops typing
+    // Debounce auto-save: 800 ms after user stops typing
     clearTimeout(saveTimers.current[entry.device.id]);
     if (value !== '') {
       saveTimers.current[entry.device.id] = setTimeout(() => saveTemp(entry, value), 800);
@@ -209,8 +197,6 @@ function DailyView() {
               const sc = statusConfig(eff, days);
               const DevIcon = DEVICE_ICONS[device.deviceType] || Thermometer;
               const inputVal = inputValues[device.id] ?? '';
-              const isSaving = saving.has(device.id);
-              const isSaved = saved.has(device.id);
 
               return (
                 <div key={device.id} className={`tp-card status-${eff}`}>
@@ -247,13 +233,6 @@ function DailyView() {
                         />
                         <span className="tp-unit">{unitSymbol(device.unit)}</span>
                       </div>
-                      <button
-                        className="tp-save-btn"
-                        disabled={isSaving || inputVal === '' || isNaN(parseFloat(inputVal))}
-                        onClick={() => saveTemp(entry, inputVal)}
-                      >
-                        {isSaving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : isSaved ? <><Check size={13} /> Saved</> : 'Log'}
-                      </button>
                     </div>
                   </div>
 
