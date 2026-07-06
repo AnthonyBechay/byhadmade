@@ -512,7 +512,8 @@ model TempLog {
   userId       String
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   date         DateTime   // midnight UTC of the day
-  temp         Float
+  openTemp     Float?     // reading taken at opening
+  closeTemp    Float?     // reading taken at closing
   isAutoFilled Boolean    @default(false)
   notes        String?
   loggedAt     DateTime   @default(now())

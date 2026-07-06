@@ -38,6 +38,20 @@ function calcStatus(temp: number, device: TempDevice): TempStatus {
   return deviation <= buffer ? 'warning' : 'danger';
 }
 
+const STATUS_RANK: Record<TempStatus, number> = { ok: 0, warning: 1, danger: 2 };
+
+type TempLogRow = { openTemp: number | null; closeTemp: number | null };
+
+// Worst status across the two daily readings, ignoring readings that are absent.
+// Returns null when neither reading is present.
+function worstStatus(log: TempLogRow, device: TempDevice): TempStatus | null {
+  const statuses: TempStatus[] = [];
+  if (log.openTemp != null) statuses.push(calcStatus(log.openTemp, device));
+  if (log.closeTemp != null) statuses.push(calcStatus(log.closeTemp, device));
+  if (statuses.length === 0) return null;
+  return statuses.reduce((worst, s) => (STATUS_RANK[s] > STATUS_RANK[worst] ? s : worst), 'ok' as TempStatus);
+}
+
 // Count consecutive days (backwards from date) where status != 'ok'
 async function consecutiveDaysOutOfRange(deviceId: string, date: Date, device: TempDevice): Promise<number> {
   // Look at up to 60 days back
@@ -57,8 +71,8 @@ async function consecutiveDaysOutOfRange(deviceId: string, date: Date, device: T
     const key = cur.toISOString();
     const log = logMap.get(key);
     if (!log) break; // no log = no data = stop
-    const s = calcStatus(log.temp, device);
-    if (s === 'ok') break;
+    const s = worstStatus(log, device);
+    if (s == null || s === 'ok') break; // no readings or within range = stop
     count++;
     cur.setDate(cur.getDate() - 1);
   }
@@ -84,7 +98,7 @@ async function autoFillPastLogs(device: TempDevice, userId: string) {
   const existingDates = new Set(existing.map((l) => l.date.getTime()));
 
   // Build list of missing dates (past days only, not today)
-  const missing: { deviceId: string; userId: string; date: Date; temp: number; isAutoFilled: boolean }[] = [];
+  const missing: { deviceId: string; userId: string; date: Date; openTemp: number; closeTemp: number; isAutoFilled: boolean }[] = [];
   const cur = new Date(deviceCreated);
   while (cur <= yesterday) {
     if (!existingDates.has(cur.getTime())) {
@@ -92,7 +106,8 @@ async function autoFillPastLogs(device: TempDevice, userId: string) {
         deviceId: device.id,
         userId,
         date: new Date(cur),
-        temp: randomInRange(device.minTemp, device.maxTemp),
+        openTemp: randomInRange(device.minTemp, device.maxTemp),
+        closeTemp: randomInRange(device.minTemp, device.maxTemp),
         isAutoFilled: true,
       });
     }
@@ -138,17 +153,17 @@ router.get('/', async (req: AuthRequest, res) => {
     const result = await Promise.all(
       devices.map(async (device) => {
         const log = logByDevice.get(device.id) ?? null;
+        const overall = log ? worstStatus(log, device) : null;
         let consecutiveDays = 0;
-        if (log) {
-          const s = calcStatus(log.temp, device);
-          if (s !== 'ok') {
-            consecutiveDays = await consecutiveDaysOutOfRange(device.id, date, device);
-          }
+        if (overall && overall !== 'ok') {
+          consecutiveDays = await consecutiveDaysOutOfRange(device.id, date, device);
         }
         return {
           device,
           log,
-          status: log ? calcStatus(log.temp, device) : 'no-data',
+          openStatus: log && log.openTemp != null ? calcStatus(log.openTemp, device) : 'no-data',
+          closeStatus: log && log.closeTemp != null ? calcStatus(log.closeTemp, device) : 'no-data',
+          status: overall ?? 'no-data',
           consecutiveDaysOutOfRange: consecutiveDays,
         };
       }),
@@ -204,10 +219,11 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
     };
 
     const rows: string[] = [
-      'Device,Location,Type,Unit,Min,Max,Target,Date,Temperature,Status,Auto-filled,Notes',
+      'Device,Location,Type,Unit,Min,Max,Target,Date,Opening Temp,Opening Status,Closing Temp,Closing Status,Auto-filled,Notes',
       ...logs.map((l) => {
         const d = l.device;
-        const s = calcStatus(l.temp, d);
+        const openStatus = l.openTemp != null ? calcStatus(l.openTemp, d) : '';
+        const closeStatus = l.closeTemp != null ? calcStatus(l.closeTemp, d) : '';
         const dateStr = l.date.toISOString().slice(0, 10);
         const escape = (v: string | null | undefined) => `"${(v || '').replace(/"/g, '""')}"`;
         return [
@@ -219,8 +235,10 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
           d.maxTemp,
           d.targetTemp ?? '',
           dateStr,
-          l.temp,
-          s,
+          l.openTemp ?? '',
+          openStatus,
+          l.closeTemp ?? '',
+          closeStatus,
           l.isAutoFilled ? 'Yes' : 'No',
           escape(l.notes),
         ].join(',');
@@ -236,7 +254,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// ─── PATCH /api/temp-logs/:id ─── (update temp for a log)
+// ─── PATCH /api/temp-logs/:id ─── (update a reading for a log)
 router.patch('/:id', async (req: AuthRequest, res) => {
   try {
     const id = req.params.id as string;
@@ -245,11 +263,12 @@ router.patch('/:id', async (req: AuthRequest, res) => {
     });
     if (!log) { res.status(404).json({ error: 'Log not found' }); return; }
 
-    const { temp, notes } = req.body;
+    const { period, temp, notes } = req.body;
+    const column = period === 'close' ? 'closeTemp' : 'openTemp';
     const updated = await prisma.tempLog.update({
       where: { id },
       data: {
-        temp: parseFloat(temp),
+        [column]: temp == null || temp === '' ? null : parseFloat(temp),
         notes: notes ?? log.notes,
         isAutoFilled: false, // user explicitly set it
         loggedAt: new Date(),
@@ -262,10 +281,11 @@ router.patch('/:id', async (req: AuthRequest, res) => {
   }
 });
 
-// ─── POST /api/temp-logs ─── (create or update log for a device+date)
+// ─── POST /api/temp-logs ─── (create or update one reading for a device+date)
+// Body: { deviceId, date, period: 'open' | 'close', temp, notes }
 router.post('/', async (req: AuthRequest, res) => {
   try {
-    const { deviceId, date: dateStr, temp, notes } = req.body;
+    const { deviceId, date: dateStr, period, temp, notes } = req.body;
     if (!deviceId || temp == null) { res.status(400).json({ error: 'deviceId and temp are required' }); return; }
 
     // Verify device ownership
@@ -273,11 +293,13 @@ router.post('/', async (req: AuthRequest, res) => {
     if (!device) { res.status(404).json({ error: 'Device not found' }); return; }
 
     const date = toDateUTC(dateStr || new Date().toISOString().slice(0, 10));
+    const column = period === 'close' ? 'closeTemp' : 'openTemp';
+    const value = parseFloat(temp);
 
     const log = await prisma.tempLog.upsert({
       where: { deviceId_date: { deviceId, date } },
-      update: { temp: parseFloat(temp), notes: notes ?? null, isAutoFilled: false, loggedAt: new Date() },
-      create: { deviceId, userId: req.userId!, date, temp: parseFloat(temp), notes: notes ?? null, isAutoFilled: false },
+      update: { [column]: value, notes: notes ?? null, isAutoFilled: false, loggedAt: new Date() },
+      create: { deviceId, userId: req.userId!, date, [column]: value, notes: notes ?? null, isAutoFilled: false },
       include: { device: true },
     });
     res.json(log);

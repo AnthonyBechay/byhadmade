@@ -22,13 +22,18 @@ interface Device {
 }
 
 interface TempLog {
-  id: string; deviceId: string; date: string; temp: number;
+  id: string; deviceId: string; date: string;
+  openTemp: number | null; closeTemp: number | null;
   isAutoFilled: boolean; notes: string | null; loggedAt: string;
 }
+
+type Period = 'open' | 'close';
 
 interface DailyEntry {
   device: Device;
   log: TempLog | null;
+  openStatus: TempStatus;
+  closeStatus: TempStatus;
   status: TempStatus;
   consecutiveDaysOutOfRange: number;
 }
@@ -93,10 +98,11 @@ function DailyView() {
     try {
       const data: DailyEntry[] = await api.get(`/temp-logs?date=${toDateStr(d)}`);
       setEntries(data);
-      // Seed input values from current logs
+      // Seed input values from current logs (keyed by "<deviceId>:<period>")
       const vals: Record<string, string> = {};
       for (const e of data) {
-        if (e.log) vals[e.device.id] = String(e.log.temp);
+        if (e.log?.openTemp != null) vals[`${e.device.id}:open`] = String(e.log.openTemp);
+        if (e.log?.closeTemp != null) vals[`${e.device.id}:close`] = String(e.log.closeTemp);
       }
       setInputValues(vals);
     } finally {
@@ -115,28 +121,40 @@ function DailyView() {
     return base === 'warning' && days >= 7 ? 'chronic' : base;
   };
 
-  const saveTemp = async (entry: DailyEntry, value: string) => {
+  // Worst of two per-reading statuses, ignoring absent readings
+  const worst = (a: TempStatus | null, b: TempStatus | null): TempStatus => {
+    const rank: Record<TempStatus, number> = { 'no-data': -1, ok: 0, warning: 1, danger: 2, chronic: 3 };
+    const list = [a, b].filter((s): s is TempStatus => s != null && s !== 'no-data');
+    if (list.length === 0) return 'no-data';
+    return list.reduce((w, s) => (rank[s] > rank[w] ? s : w));
+  };
+
+  const saveTemp = async (entry: DailyEntry, period: Period, value: string) => {
     const temp = parseFloat(value);
     if (isNaN(temp)) return;
     const deviceId = entry.device.id;
     try {
-      const log = await api.post('/temp-logs', {
-        deviceId, date: toDateStr(date), temp, notes: entry.log?.notes ?? null,
+      const log: TempLog = await api.post('/temp-logs', {
+        deviceId, date: toDateStr(date), period, temp, notes: entry.log?.notes ?? null,
       });
       setEntries((prev) =>
-        prev.map((e) => e.device.id !== deviceId ? e : {
-          ...e, log, status: clientStatus(temp, e.device, e.consecutiveDaysOutOfRange),
+        prev.map((e) => {
+          if (e.device.id !== deviceId) return e;
+          const openStatus = log.openTemp != null ? clientStatus(log.openTemp, e.device, e.consecutiveDaysOutOfRange) : 'no-data';
+          const closeStatus = log.closeTemp != null ? clientStatus(log.closeTemp, e.device, e.consecutiveDaysOutOfRange) : 'no-data';
+          return { ...e, log, openStatus, closeStatus, status: worst(openStatus, closeStatus) };
         }),
       );
     } catch { /* silent */ }
   };
 
-  const handleInput = (entry: DailyEntry, value: string) => {
-    setInputValues((p) => ({ ...p, [entry.device.id]: value }));
+  const handleInput = (entry: DailyEntry, period: Period, value: string) => {
+    const key = `${entry.device.id}:${period}`;
+    setInputValues((p) => ({ ...p, [key]: value }));
     // Debounce auto-save: 800 ms after user stops typing
-    clearTimeout(saveTimers.current[entry.device.id]);
+    clearTimeout(saveTimers.current[key]);
     if (value !== '') {
-      saveTimers.current[entry.device.id] = setTimeout(() => saveTemp(entry, value), 800);
+      saveTimers.current[key] = setTimeout(() => saveTemp(entry, period, value), 800);
     }
   };
 
@@ -192,11 +210,18 @@ function DailyView() {
           <div key={loc} className="tp-group">
             <div className="tp-group-title">{loc}</div>
             {list.map((entry) => {
-              const { device, log, status, consecutiveDaysOutOfRange: days } = entry;
+              const { device, log, status, openStatus, closeStatus, consecutiveDaysOutOfRange: days } = entry;
               const eff: TempStatus = status === 'warning' && days >= 7 ? 'chronic' : status;
               const sc = statusConfig(eff, days);
               const DevIcon = DEVICE_ICONS[device.deviceType] || Thermometer;
-              const inputVal = inputValues[device.id] ?? '';
+
+              const inputClass = (s: TempStatus) =>
+                s === 'ok' ? 'ok-input' : s === 'warning' ? 'warn-input' : s === 'danger' || s === 'chronic' ? 'danger-input' : '';
+
+              const readings: { period: Period; label: string; s: TempStatus }[] = [
+                { period: 'open', label: 'Opening', s: openStatus },
+                { period: 'close', label: 'Closing', s: closeStatus },
+              ];
 
               return (
                 <div key={device.id} className={`tp-card status-${eff}`}>
@@ -222,17 +247,22 @@ function DailyView() {
                     </div>
 
                     <div className="tp-input-area">
-                      <div className="tp-temp-input-wrap">
-                        <input
-                          type="number"
-                          step="0.1"
-                          className={`tp-temp-input ${eff === 'ok' ? 'ok-input' : eff === 'warning' ? 'warn-input' : eff === 'danger' || eff === 'chronic' ? 'danger-input' : ''}`}
-                          value={inputVal}
-                          onChange={(e) => handleInput(entry, e.target.value)}
-                          placeholder="—"
-                        />
-                        <span className="tp-unit">{unitSymbol(device.unit)}</span>
-                      </div>
+                      {readings.map(({ period, label, s }) => (
+                        <div key={period} className="tp-reading">
+                          <span className="tp-reading-label">{label}</span>
+                          <div className="tp-temp-input-wrap">
+                            <input
+                              type="number"
+                              step="0.1"
+                              className={`tp-temp-input ${inputClass(s)}`}
+                              value={inputValues[`${device.id}:${period}`] ?? ''}
+                              onChange={(e) => handleInput(entry, period, e.target.value)}
+                              placeholder="—"
+                            />
+                            <span className="tp-unit">{unitSymbol(device.unit)}</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
